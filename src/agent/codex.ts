@@ -107,6 +107,17 @@ class JsonRpcResponseError extends Error {
   }
 }
 
+export class CodexProcessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CodexProcessError";
+  }
+}
+
+export function isCodexProcessError(error: unknown): error is CodexProcessError {
+  return error instanceof CodexProcessError;
+}
+
 class JsonRpcConnection {
   private readonly parser = new JsonRpcLineParser();
   private readonly decoder = new StringDecoder("utf8");
@@ -327,6 +338,7 @@ export class CodexAdapter implements AgentAdapter {
   private process: CodexProcess | null = null;
   private connection: JsonRpcConnection | null = null;
   private initialized = false;
+  private processFailureHandled = false;
   private stderrTail = "";
   private versionChecked = false;
 
@@ -408,6 +420,7 @@ export class CodexAdapter implements AgentAdapter {
   async dispose(): Promise<void> {
     this.events.close();
     this.connection?.closeWithError(new Error("Codex adapter disposed"));
+    this.processFailureHandled = true;
 
     if (this.process === null || this.process.killed) {
       return;
@@ -459,12 +472,16 @@ export class CodexAdapter implements AgentAdapter {
       this.stderrTail = (this.stderrTail + chunk).slice(-MAX_STDERR_TAIL_CHARS);
     });
 
-    this.process.once("error", (error) => this.handleProcessFailure(error));
+    this.process.once("error", (error) => {
+      this.handleProcessFailure(
+        new CodexProcessError(`Codex app-server failed to start: ${error.message}`)
+      );
+    });
     this.process.once("exit", (code, signal) => {
       const stderr = this.stderrTail.trim();
       const suffix = stderr.length === 0 ? "" : `\n\nCodex stderr:\n${stderr}`;
       this.handleProcessFailure(
-        new Error(`Codex app-server exited with code ${code} signal ${signal}${suffix}`)
+        new CodexProcessError(`Codex app-server exited with code ${code} signal ${signal}${suffix}`)
       );
     });
   }
@@ -648,13 +665,21 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   private handleProcessFailure(error: Error): void {
+    if (this.processFailureHandled) {
+      return;
+    }
+    this.processFailureHandled = true;
+
+    const processError =
+      error instanceof CodexProcessError ? error : new CodexProcessError(error.message);
+
     for (const pending of this.pendingApprovals.values()) {
-      pending.reject(error);
+      pending.reject(processError);
     }
     this.pendingApprovals.clear();
     this.requestApprovals.clear();
-    this.connection?.closeWithError(error);
-    this.events.fail(error);
+    this.connection?.closeWithError(processError);
+    this.events.fail(processError);
   }
 }
 

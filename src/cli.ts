@@ -13,6 +13,8 @@ type Command = {
   run: () => Promise<void> | void;
 };
 
+let fatalHandlersInstalled = false;
+
 const commands: Command[] = [
   {
     name: "init",
@@ -74,7 +76,40 @@ async function main(args: string[]): Promise<void> {
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(message);
+  console.error(errorMessage(error));
   process.exitCode = 1;
 });
+
+installFatalErrorHandlers();
+
+function installFatalErrorHandlers(): void {
+  if (fatalHandlersInstalled) {
+    return;
+  }
+
+  fatalHandlersInstalled = true;
+  process.on("uncaughtException", (error) => {
+    console.error(`Agent Pager crashed: ${errorStack(error)}`);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error(`Agent Pager crashed: ${errorStack(reason)}`);
+    process.exit(1);
+  });
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function errorStack(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack ?? error.message;
+  }
+
+  return String(error);
+}

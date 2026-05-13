@@ -4,6 +4,9 @@ import type { ChannelEvent, ChannelMessage, MessageChannel } from "./types.js";
 
 const TELEGRAM_MESSAGE_LIMIT = 4000;
 const TELEGRAM_POLL_TIMEOUT_SECONDS = 30;
+const TELEGRAM_RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000] as const;
+
+type TelegramConnectionStatus = "connected" | "disconnected";
 
 export type TelegramUser = {
   id: number;
@@ -35,18 +38,30 @@ type TelegramChannelOptions = {
   botToken: string;
   chatId?: number;
   fetch?: FetchLike;
+  onConnectionStateChange?: (status: TelegramConnectionStatus, error?: Error) => void;
+  retryDelaysMs?: readonly number[];
+  sleep?: (ms: number) => Promise<void>;
 };
 
 export class TelegramChannel implements MessageChannel {
   private readonly apiBase: string;
   private readonly chatId: number | undefined;
   private readonly fetchImpl: FetchLike;
+  private readonly onConnectionStateChange:
+    | ((status: TelegramConnectionStatus, error?: Error) => void)
+    | undefined;
+  private readonly retryDelaysMs: readonly number[];
+  private readonly sleep: (ms: number) => Promise<void>;
+  private connectionStatus: TelegramConnectionStatus | null = null;
   private running = false;
 
   constructor(options: TelegramChannelOptions) {
     this.apiBase = `https://api.telegram.org/bot${options.botToken}`;
     this.chatId = options.chatId;
     this.fetchImpl = options.fetch ?? fetch;
+    this.onConnectionStateChange = options.onConnectionStateChange;
+    this.retryDelaysMs = options.retryDelaysMs ?? TELEGRAM_RETRY_DELAYS_MS;
+    this.sleep = options.sleep ?? sleep;
   }
 
   async start(): Promise<void> {
@@ -76,16 +91,31 @@ export class TelegramChannel implements MessageChannel {
       throw new Error("Telegram chat_id is required before polling channel events");
     }
 
-    let offset = nextTelegramOffset(await this.getUpdates({ timeoutSeconds: 0 }));
+    let offset: number | undefined;
+    let drainedInitialUpdates = false;
+    let retryAttempt = 0;
 
     while (this.running) {
-      const updates = await this.getUpdates({
-        ...(offset === undefined ? {} : { offset }),
-        timeoutSeconds: TELEGRAM_POLL_TIMEOUT_SECONDS,
-      });
-      const nextOffset = nextTelegramOffset(updates);
-      if (nextOffset !== undefined) {
-        offset = nextOffset;
+      let updates: TelegramUpdate[];
+      try {
+        updates = await this.getUpdates({
+          ...(offset === undefined ? {} : { offset }),
+          timeoutSeconds: drainedInitialUpdates ? TELEGRAM_POLL_TIMEOUT_SECONDS : 0,
+        });
+        this.setConnectionStatus("connected");
+        retryAttempt = 0;
+      } catch (error) {
+        this.setConnectionStatus("disconnected", asError(error));
+        await this.sleep(retryDelayMs(this.retryDelaysMs, retryAttempt));
+        retryAttempt += 1;
+        continue;
+      }
+
+      offset = nextTelegramOffset(updates) ?? offset;
+
+      if (!drainedInitialUpdates) {
+        drainedInitialUpdates = true;
+        continue;
       }
 
       for (const update of updates) {
@@ -206,6 +236,15 @@ export class TelegramChannel implements MessageChannel {
     }
 
     return payload.result as T;
+  }
+
+  private setConnectionStatus(status: TelegramConnectionStatus, error?: Error): void {
+    if (this.connectionStatus === status) {
+      return;
+    }
+
+    this.connectionStatus = status;
+    this.onConnectionStateChange?.(status, error);
   }
 }
 
@@ -358,4 +397,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPresent(value: string | undefined): value is string {
   return value !== undefined && value.length > 0;
+}
+
+function retryDelayMs(delays: readonly number[], attempt: number): number {
+  if (delays.length === 0) {
+    return 0;
+  }
+
+  return delays[Math.min(attempt, delays.length - 1)] ?? 0;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function asError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(String(error));
 }

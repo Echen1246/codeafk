@@ -106,6 +106,63 @@ describe("TelegramChannel", () => {
     });
   });
 
+  it("retries polling after transient Telegram failures", async () => {
+    const sleeps: number[] = [];
+    const connectionStates: string[] = [];
+    const responses: Array<Error | unknown> = [
+      { ok: true, result: [] },
+      new Error("network offline"),
+      {
+        ok: true,
+        result: [
+          {
+            update_id: 3,
+            message: {
+              chat: { id: 123 },
+              from: { id: 456 },
+              text: "back online",
+            },
+          },
+        ],
+      },
+    ];
+    const channel = new TelegramChannel({
+      botToken: "token",
+      chatId: 123,
+      fetch: async () => {
+        const response = responses.shift();
+        if (response instanceof Error) {
+          throw response;
+        }
+
+        return jsonResponse(response);
+      },
+      onConnectionStateChange: (status, error) => {
+        connectionStates.push(error === undefined ? status : `${status}: ${error.message}`);
+      },
+      retryDelaysMs: [25],
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    await channel.start();
+    const iterator = channel.events()[Symbol.asyncIterator]();
+    const event = await iterator.next();
+    await channel.stop();
+
+    expect(event).toEqual({
+      done: false,
+      value: { type: "message", text: "back online", fromUserId: "456" },
+    });
+    expect(sleeps).toEqual([25]);
+    expect(connectionStates).toEqual([
+      "connected",
+      "disconnected: network offline",
+      "connected",
+    ]);
+  });
+
   it("sends inline keyboard buttons", async () => {
     const requests: Array<{ url: string; body: unknown }> = [];
     const channel = new TelegramChannel({

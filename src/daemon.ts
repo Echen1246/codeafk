@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
-import { CodexAdapter } from "./agent/codex.js";
+import { CodexAdapter, isCodexProcessError } from "./agent/codex.js";
 import type { AgentAdapter } from "./agent/types.js";
 import type { MessageChannel } from "./channel/types.js";
 import { TelegramChannel } from "./channel/telegram.js";
@@ -11,12 +11,20 @@ import { runOrchestrator } from "./orchestrator.js";
 
 const STATE_FILE_MODE = 0o600;
 const STATE_DIR_MODE = 0o700;
+const CODEX_CRASH_MESSAGE = "Codex crashed unexpectedly. Restart with `apgr start`.";
+
+type AgentHealthStatus = "running" | "dead";
+type ChannelHealthStatus = "connected" | "disconnected";
 
 export type LastThreadState = {
   threadId: string;
   cwd: string;
   pid: number;
   status: "running" | "stopped";
+  agentStatus?: AgentHealthStatus;
+  channelStatus?: ChannelHealthStatus;
+  lastAgentError?: string;
+  lastChannelError?: string;
   startedAt: string;
   stoppedAt?: string;
 };
@@ -47,14 +55,29 @@ export function getStatePath(env: NodeJS.ProcessEnv = process.env): string {
 export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
   const cwd = options.cwd ?? process.cwd();
   const config = options.config ?? (await requireConfig());
+  const statePath = options.statePath ?? getStatePath();
+  let agentStatus: AgentHealthStatus = "running";
+  let channelStatus: ChannelHealthStatus = "connected";
+  let lastAgentError: string | undefined;
+  let lastChannelError: string | undefined;
+  const updateChannelStatus = (status: ChannelHealthStatus, error?: Error): void => {
+    channelStatus = status;
+    lastChannelError = error?.message;
+    void patchLastThreadState(statePath, {
+      channelStatus,
+      ...(lastChannelError === undefined ? {} : { lastChannelError }),
+    }).catch((patchError: unknown) => {
+      console.error(`Failed to update channel status: ${asError(patchError).message}`);
+    });
+  };
   const agent = options.agent ?? new CodexAdapter();
   const channel =
     options.channel ??
     new TelegramChannel({
       botToken: config.channel.bot_token,
       chatId: config.channel.chat_id,
+      onConnectionStateChange: updateChannelStatus,
     });
-  const statePath = options.statePath ?? getStatePath();
   const stdout = options.stdout ?? process.stdout;
   const abortController = new AbortController();
 
@@ -67,6 +90,8 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       cwd,
       pid: process.pid,
       status: "running",
+      agentStatus,
+      channelStatus,
       startedAt,
     },
     statePath
@@ -95,16 +120,33 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       session,
       signal: abortController.signal,
     });
+  } catch (error) {
+    if (!isCodexProcessError(error)) {
+      throw error;
+    }
+
+    agentStatus = "dead";
+    lastAgentError = error.message;
+    await patchLastThreadState(statePath, {
+      agentStatus,
+      lastAgentError,
+    });
+    await sendIfPossible(channel, CODEX_CRASH_MESSAGE);
   } finally {
     removeSignalHandlers();
     await channel.stop();
     await agent.dispose?.();
+    channelStatus = "disconnected";
     await writeLastThreadState(
       {
         threadId: session.threadId,
         cwd,
         pid: process.pid,
         status: "stopped",
+        agentStatus,
+        channelStatus,
+        ...(lastAgentError === undefined ? {} : { lastAgentError }),
+        ...(lastChannelError === undefined ? {} : { lastChannelError }),
         startedAt,
         stoppedAt: new Date().toISOString(),
       },
@@ -142,6 +184,15 @@ export async function writeLastThreadState(
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, { mode: STATE_FILE_MODE });
 }
 
+async function patchLastThreadState(statePath: string, patch: Partial<LastThreadState>): Promise<void> {
+  const state = await readLastThreadState(statePath);
+  if (state === null) {
+    return;
+  }
+
+  await writeLastThreadState({ ...state, ...patch }, statePath);
+}
+
 export async function markLastThreadStopped(
   state: LastThreadState,
   statePath = getStatePath()
@@ -168,6 +219,14 @@ export function isProcessRunning(pid: number): boolean {
       return true;
     }
     throw error;
+  }
+}
+
+async function sendIfPossible(channel: MessageChannel, text: string): Promise<void> {
+  try {
+    await channel.send({ text });
+  } catch (error) {
+    console.error(`Failed to send channel error message: ${asError(error).message}`);
   }
 }
 
@@ -200,6 +259,14 @@ function isLastThreadState(value: unknown): value is LastThreadState {
     typeof value.cwd === "string" &&
     typeof value.pid === "number" &&
     (value.status === "running" || value.status === "stopped") &&
+    (value.agentStatus === undefined ||
+      value.agentStatus === "running" ||
+      value.agentStatus === "dead") &&
+    (value.channelStatus === undefined ||
+      value.channelStatus === "connected" ||
+      value.channelStatus === "disconnected") &&
+    (value.lastAgentError === undefined || typeof value.lastAgentError === "string") &&
+    (value.lastChannelError === undefined || typeof value.lastChannelError === "string") &&
     typeof value.startedAt === "string" &&
     (value.stoppedAt === undefined || typeof value.stoppedAt === "string")
   );
@@ -211,4 +278,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function asError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(String(error));
 }
