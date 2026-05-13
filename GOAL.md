@@ -220,10 +220,10 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 - On `turn_complete`, send the most recent `diffRef` as a Telegram file attachment
 - Include changed files and stats in the completion message
 
-**Out of scope:** Syntax highlighting. HTML rendering. File-change approval gating (Codex makes changes freely in workspace-write mode; we just report them).
+**Out of scope:** Syntax highlighting. File-change approval gating (Codex makes changes freely in workspace-write mode; we just report them).
 
 **Notes:**
-- For v0, the diff is plain text. v0.5 will add a syntax-highlighted HTML version.
+- For v0, send both the raw `.diff` and a lightweight locally generated HTML view. v0.5 can add richer syntax highlighting.
 - If a turn produces no diff (e.g. it was a read-only query), don't send an empty attachment. Just the completion message.
 
 ---
@@ -305,12 +305,6 @@ If you hit a dead end on a checkpoint and can't figure out why, **stop and expla
 - Your best hypothesis about why
 
 Don't spend hours guessing. The user is around and prefers a 5-minute conversation over a 5-hour blind alley.
-
-## Known follow-ups
-
-- Desktop Codex does not appear to live-refresh an already-open chat when Agent Pager appends to the same thread through `codex app-server`. For v0, document this in `apgr resume` output or README: users may need to reopen/resume the thread locally with `codex resume <thread-id>` to see the phone-session transcript.
-
----
 
 ## v0 done condition
 

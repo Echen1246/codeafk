@@ -24,7 +24,16 @@ export async function resumeCommand(): Promise<void> {
     return;
   }
 
-  console.log("Away Mode stopped.\n");
-  console.log("To continue this thread in your terminal:");
-  console.log(`  codex resume ${state.threadId}`);
+  console.log(formatResumeInstructions(state.threadId));
+}
+
+export function formatResumeInstructions(threadId: string): string {
+  return [
+    "Away Mode stopped.",
+    "",
+    "To continue this thread in your terminal:",
+    `  codex resume ${threadId}`,
+    "",
+    "Note: an already-open Codex window may not live-refresh phone updates. Reopen or resume the thread to view the phone-session transcript.",
+  ].join("\n");
 }

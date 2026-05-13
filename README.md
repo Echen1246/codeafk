@@ -79,6 +79,8 @@ apgr --help
    codex resume <thread-id>
    ```
 
+   If an already-open Codex window still looks stale, reopen or resume the thread. Codex may not live-refresh updates written by Agent Pager while Away Mode was active.
+
 ## Telegram Flow
 
 The v0 UI is plain Telegram messages and inline buttons:
