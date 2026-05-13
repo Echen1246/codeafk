@@ -147,6 +147,47 @@ describe("TelegramChannel", () => {
     ]);
   });
 
+  it("sends attachments as Telegram documents", async () => {
+    const requests: Array<{ url: string; body: BodyInit | null | undefined }> = [];
+    const channel = new TelegramChannel({
+      botToken: "token",
+      chatId: 123,
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: init?.body,
+        });
+        return jsonResponse({ ok: true, result: {} });
+      },
+    });
+
+    await channel.send({
+      text: "Codex finished.",
+      attachments: [
+        {
+          filename: "turn_1.diff",
+          content: Buffer.from("diff --git a/README.md b/README.md\n"),
+          mimeType: "text/x-diff",
+        },
+      ],
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.url).toBe("https://api.telegram.org/bottoken/sendMessage");
+    expect(requests[1]?.url).toBe("https://api.telegram.org/bottoken/sendDocument");
+    expect(requests[1]?.body).toBeInstanceOf(FormData);
+
+    const body = requests[1]?.body as FormData;
+    expect(body.get("chat_id")).toBe("123");
+
+    const document = body.get("document");
+    expect(document).toBeInstanceOf(File);
+    expect((document as File).name).toBe("turn_1.diff");
+    await expect((document as File).text()).resolves.toBe(
+      "diff --git a/README.md b/README.md\n"
+    );
+  });
+
   it("streams callback queries from the paired chat", async () => {
     const requests: string[] = [];
     const responses = [

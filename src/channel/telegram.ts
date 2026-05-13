@@ -65,6 +65,10 @@ export class TelegramChannel implements MessageChannel {
     for (const chunk of splitTelegramText(msg.text)) {
       await this.sendMessage(this.chatId, chunk, msg.buttons);
     }
+
+    for (const attachment of msg.attachments ?? []) {
+      await this.sendDocument(this.chatId, attachment);
+    }
   }
 
   async *events(): AsyncIterable<ChannelEvent> {
@@ -148,6 +152,23 @@ export class TelegramChannel implements MessageChannel {
     });
   }
 
+  private async sendDocument(
+    chatId: number,
+    attachment: NonNullable<ChannelMessage["attachments"]>[number]
+  ): Promise<void> {
+    const content = Uint8Array.from(attachment.content);
+    const body = new FormData();
+    body.set("chat_id", String(chatId));
+    body.set(
+      "document",
+      new File([content], attachment.filename, {
+        type: attachment.mimeType,
+      })
+    );
+
+    await this.callMultipart("sendDocument", body);
+  }
+
   private async call<T>(method: string, body: Record<string, unknown>): Promise<T> {
     const response = await this.fetchImpl(`${this.apiBase}/${method}`, {
       method: "POST",
@@ -155,6 +176,24 @@ export class TelegramChannel implements MessageChannel {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
+    });
+
+    const payload: unknown = await response.json();
+    if (!isTelegramResponse(payload)) {
+      throw new Error(`Telegram ${method} returned an invalid response`);
+    }
+
+    if (!payload.ok) {
+      throw new Error(`Telegram ${method} failed: ${payload.description}`);
+    }
+
+    return payload.result as T;
+  }
+
+  private async callMultipart<T>(method: string, body: FormData): Promise<T> {
+    const response = await this.fetchImpl(`${this.apiBase}/${method}`, {
+      method: "POST",
+      body,
     });
 
     const payload: unknown = await response.json();

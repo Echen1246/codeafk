@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   encodeJsonRpcMessage,
+  getDiffDirectory,
   JsonRpcLineParser,
   parseCodexCliVersion,
+  summarizeUnifiedDiff,
 } from "../../src/agent/codex.js";
 
 describe("JSON-RPC line framing", () => {
@@ -50,5 +52,42 @@ describe("Codex CLI version parsing", () => {
     ].join("\n");
 
     expect(parseCodexCliVersion(output)).toBe("0.130.0-alpha.5");
+  });
+});
+
+describe("Codex diff helpers", () => {
+  it("uses XDG_STATE_HOME for diff snapshots when present", () => {
+    expect(getDiffDirectory({ XDG_STATE_HOME: "/tmp/apgr-state" })).toBe(
+      "/tmp/apgr-state/apgr/diffs"
+    );
+  });
+
+  it("summarizes changed files and line stats from unified diffs", () => {
+    const diff = [
+      "diff --git a/README.md b/README.md",
+      "index 1111111..2222222 100644",
+      "--- a/README.md",
+      "+++ b/README.md",
+      "@@ -1,2 +1,3 @@",
+      " Agent Pager",
+      "-old line",
+      "+new line",
+      "+hello world",
+      "diff --git a/src/cli.ts b/src/cli.ts",
+      "--- a/src/cli.ts",
+      "+++ b/src/cli.ts",
+      "@@ -1 +1 @@",
+      "-console.log('old')",
+      "+console.log('new')",
+    ].join("\n");
+
+    expect(summarizeUnifiedDiff(diff)).toEqual({
+      changedFiles: ["README.md", "src/cli.ts"],
+      stats: {
+        files: 2,
+        additions: 3,
+        deletions: 2,
+      },
+    });
   });
 });

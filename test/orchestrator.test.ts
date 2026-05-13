@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AgentAdapter, AgentEvent, AgentSession, ApprovalDecision } from "../src/agent/types.js";
@@ -44,6 +47,51 @@ describe("runOrchestrator", () => {
     expect(channel.sentMessages).toEqual(["README.md\nsrc/cli.ts", "Codex finished."]);
   });
 
+  it("sends changed file stats and the latest diff attachment when a turn completes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "apgr-diff-test-"));
+    const diffRef = join(directory, "turn_1.diff");
+    const diff = [
+      "diff --git a/README.md b/README.md",
+      "--- a/README.md",
+      "+++ b/README.md",
+      "@@ -1 +1,2 @@",
+      " Agent Pager",
+      "+hello world",
+    ].join("\n");
+    await writeFile(diffRef, diff);
+
+    const channel = new FakeChannel([]);
+    const agent = new FakeAgent([
+      {
+        type: "diff_updated",
+        sessionId: "thr_123",
+        turnId: "turn_1",
+        diffRef,
+        changedFiles: ["README.md"],
+        stats: { files: 1, additions: 1, deletions: 0 },
+      },
+      {
+        type: "turn_complete",
+        sessionId: "thr_123",
+        turnId: "turn_1",
+        status: "completed",
+      },
+    ]);
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(channel.sentMessages).toEqual(["Codex finished.\nChanged: README.md (+1 -0)"]);
+    expect(channel.sentAttachments).toEqual([
+      [
+        {
+          filename: "turn_1.diff",
+          content: Buffer.from(diff),
+          mimeType: "text/x-diff",
+        },
+      ],
+    ]);
+  });
+
   it("sends approval buttons and forwards button decisions to Codex", async () => {
     const channel = new FakeChannel([{ type: "button_press", callbackId: "apgr:1", fromUserId: "u1" }]);
     const agent = new FakeAgent([
@@ -76,6 +124,7 @@ describe("runOrchestrator", () => {
 
 class FakeChannel implements MessageChannel {
   readonly sentMessages: string[] = [];
+  readonly sentAttachments: Array<NonNullable<ChannelMessage["attachments"]>> = [];
   readonly sentButtons: Array<NonNullable<ChannelMessage["buttons"]>> = [];
 
   constructor(private readonly channelEvents: ChannelEvent[]) {}
@@ -90,6 +139,9 @@ class FakeChannel implements MessageChannel {
 
   async send(msg: ChannelMessage): Promise<void> {
     this.sentMessages.push(msg.text);
+    if (msg.attachments !== undefined) {
+      this.sentAttachments.push(msg.attachments);
+    }
     if (msg.buttons !== undefined) {
       this.sentButtons.push(msg.buttons);
     }

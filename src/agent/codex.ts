@@ -1,5 +1,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import type { Readable, Writable } from "node:stream";
 
@@ -17,6 +19,8 @@ const CLIENT_VERSION = "0.0.0";
 const MAX_STDERR_TAIL_CHARS = 4000;
 const MACOS_CODEX_APP_PATH = "/Applications/Codex.app/Contents/Resources/codex";
 const SUPPORTED_CODEX_CLI_VERSION = "0.130.0-alpha.5";
+const DIFF_DIR_MODE = 0o700;
+const DIFF_FILE_MODE = 0o600;
 
 type JsonRpcId = number | string;
 type JsonObject = Record<string, unknown>;
@@ -43,6 +47,15 @@ type PendingApprovalResponse = {
   turnId: string;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
+};
+
+type DiffStats = { files: number; additions: number; deletions: number };
+
+type StoredDiff = {
+  diffRef: string;
+  changedFiles: string[];
+  stats: DiffStats;
+  isEmpty: boolean;
 };
 
 export class JsonRpcLineParser {
@@ -296,16 +309,19 @@ class AsyncEventQueue<T> implements AsyncIterable<T>, AsyncIterator<T> {
 
 type CodexAdapterOptions = {
   codexPath?: string;
+  diffDirectory?: string;
   env?: NodeJS.ProcessEnv;
   onWarning?: (message: string) => void;
 };
 
 export class CodexAdapter implements AgentAdapter {
   private readonly codexPath: string;
+  private readonly diffDirectory: string;
   private readonly env: NodeJS.ProcessEnv;
   private readonly onWarning: (message: string) => void;
   private readonly events = new AsyncEventQueue<AgentEvent>();
   private readonly messageBuffers = new Map<string, string>();
+  private readonly latestDiffs = new Map<string, StoredDiff>();
   private readonly pendingApprovals = new Map<string, PendingApprovalResponse>();
   private readonly requestApprovals = new Map<string, string>();
   private process: CodexProcess | null = null;
@@ -317,6 +333,7 @@ export class CodexAdapter implements AgentAdapter {
   constructor(options: CodexAdapterOptions = {}) {
     this.codexPath = options.codexPath ?? defaultCodexPath();
     this.env = options.env ?? process.env;
+    this.diffDirectory = options.diffDirectory ?? getDiffDirectory(this.env);
     this.onWarning = options.onWarning ?? ((message) => console.warn(message));
   }
 
@@ -504,13 +521,26 @@ export class CodexAdapter implements AgentAdapter {
 
     if (method === "turn/completed" && isTurnCompleted(params)) {
       const summary = this.messageBuffers.get(params.turn.id);
+      const latestDiff = this.latestDiffs.get(params.turn.id);
+      this.latestDiffs.delete(params.turn.id);
       this.events.push({
         type: "turn_complete",
         sessionId: params.threadId,
         turnId: params.turn.id,
         status: params.turn.status,
         ...(summary === undefined ? {} : { summary }),
+        ...(latestDiff === undefined || latestDiff.isEmpty
+          ? {}
+          : {
+              changedFiles: latestDiff.changedFiles,
+              latestDiffRef: latestDiff.diffRef,
+            }),
       });
+      return;
+    }
+
+    if (method === "turn/diff/updated" && isTurnDiffUpdated(params)) {
+      this.handleDiffUpdated(params);
       return;
     }
 
@@ -579,6 +609,44 @@ export class CodexAdapter implements AgentAdapter {
     });
   }
 
+  private handleDiffUpdated(params: TurnDiffUpdatedNotification): void {
+    let storedDiff: StoredDiff;
+    try {
+      storedDiff = this.snapshotDiff(params.turnId, params.diff);
+    } catch (error) {
+      this.events.push({
+        type: "error",
+        sessionId: params.threadId,
+        turnId: params.turnId,
+        summary: `Failed to snapshot Codex diff: ${asError(error).message}`,
+      });
+      return;
+    }
+
+    this.latestDiffs.set(params.turnId, storedDiff);
+    this.events.push({
+      type: "diff_updated",
+      sessionId: params.threadId,
+      turnId: params.turnId,
+      diffRef: storedDiff.diffRef,
+      changedFiles: storedDiff.changedFiles,
+      stats: storedDiff.stats,
+    });
+  }
+
+  private snapshotDiff(turnId: string, diff: string): StoredDiff {
+    mkdirSync(this.diffDirectory, { recursive: true, mode: DIFF_DIR_MODE });
+
+    const diffRef = join(this.diffDirectory, `${safeDiffFilename(turnId)}.diff`);
+    writeFileSync(diffRef, diff, { mode: DIFF_FILE_MODE });
+
+    return {
+      diffRef,
+      ...summarizeUnifiedDiff(diff),
+      isEmpty: diff.trim().length === 0,
+    };
+  }
+
   private handleProcessFailure(error: Error): void {
     for (const pending of this.pendingApprovals.values()) {
       pending.reject(error);
@@ -604,6 +672,57 @@ function defaultCodexPath(): string {
   }
 
   return "codex";
+}
+
+export function getDiffDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const xdgStateHome = env.XDG_STATE_HOME;
+  const stateHome =
+    xdgStateHome !== undefined && xdgStateHome.length > 0
+      ? xdgStateHome
+      : join(homedir(), ".local", "state");
+
+  return join(stateHome, "apgr", "diffs");
+}
+
+export function summarizeUnifiedDiff(diff: string): {
+  changedFiles: string[];
+  stats: DiffStats;
+} {
+  const changedFiles = new Set<string>();
+  let additions = 0;
+  let deletions = 0;
+
+  for (const line of diff.split(/\r?\n/)) {
+    const diffPath = parseDiffGitPath(line);
+    if (diffPath !== null) {
+      changedFiles.add(diffPath);
+      continue;
+    }
+
+    const headerPath = parseUnifiedDiffHeaderPath(line);
+    if (headerPath !== null) {
+      changedFiles.add(headerPath);
+      continue;
+    }
+
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      additions += 1;
+      continue;
+    }
+
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      deletions += 1;
+    }
+  }
+
+  return {
+    changedFiles: [...changedFiles],
+    stats: {
+      files: changedFiles.size,
+      additions,
+      deletions,
+    },
+  };
 }
 
 function sessionFromThreadResponse(result: unknown, fallbackCwd: string): AgentSession {
@@ -662,6 +781,21 @@ function isTurnCompleted(value: unknown): value is {
   );
 }
 
+type TurnDiffUpdatedNotification = {
+  threadId: string;
+  turnId: string;
+  diff: string;
+};
+
+function isTurnDiffUpdated(value: unknown): value is TurnDiffUpdatedNotification {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    typeof value.turnId === "string" &&
+    typeof value.diff === "string"
+  );
+}
+
 function isErrorNotification(value: unknown): value is {
   threadId: string;
   turnId: string;
@@ -713,6 +847,32 @@ function getJsonRpcId(message: JsonObject): JsonRpcId | null {
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseDiffGitPath(line: string): string | null {
+  const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+  return match?.[2] ?? null;
+}
+
+function parseUnifiedDiffHeaderPath(line: string): string | null {
+  if (!line.startsWith("+++ ")) {
+    return null;
+  }
+
+  const path = line.slice(4).trim().split("\t")[0];
+  if (path === "/dev/null") {
+    return null;
+  }
+
+  if (path.startsWith("a/") || path.startsWith("b/")) {
+    return path.slice(2);
+  }
+
+  return path.length === 0 ? null : path;
+}
+
+function safeDiffFilename(turnId: string): string {
+  return turnId.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
 function asError(error: unknown): Error {
