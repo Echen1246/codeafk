@@ -9,6 +9,7 @@ import type {
   AgentEvent,
   AgentSession,
   AgentSessionSummary,
+  AgentTranscriptMessage,
   ApprovalDecision,
   ListAgentSessionsOptions,
   StartSessionOptions,
@@ -170,8 +171,12 @@ class CrashingAgent implements AgentAdapter {
     return [];
   }
 
-  async sendMessage(): Promise<void> {
-    return Promise.resolve();
+  async readRecentMessages(): Promise<AgentTranscriptMessage[]> {
+    return [];
+  }
+
+  async sendMessage(): Promise<{ turnId: string }> {
+    return { turnId: "turn_1" };
   }
 
   async steerActiveTurn(): Promise<void> {
@@ -226,8 +231,12 @@ class SwitchingAgent implements AgentAdapter {
     return this.sessions.filter((item) => item.cwd === options.cwd);
   }
 
-  async sendMessage(): Promise<void> {
-    return Promise.resolve();
+  async readRecentMessages(): Promise<AgentTranscriptMessage[]> {
+    return [];
+  }
+
+  async sendMessage(): Promise<{ turnId: string }> {
+    return { turnId: "turn_1" };
   }
 
   async steerActiveTurn(): Promise<void> {

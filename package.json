@@ -24,6 +24,7 @@
     "dist/cli.js",
     "dist/config.js",
     "dist/daemon.js",
+    "dist/diff-format.js",
     "dist/orchestrator.js",
     "dist/session-picker.js",
     "README.md",

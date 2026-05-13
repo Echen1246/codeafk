@@ -7,7 +7,7 @@ import type { AgentAdapter } from "./agent/types.js";
 import type { MessageChannel } from "./channel/types.js";
 import { TelegramChannel } from "./channel/telegram.js";
 import { loadConfig, type AppConfig } from "./config.js";
-import { runOrchestrator } from "./orchestrator.js";
+import { runOrchestrator, sendSessionCatchUp } from "./orchestrator.js";
 import {
   channelEventsFromIterator,
   isSessionSelectionAborted,
@@ -135,6 +135,9 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       threadId: session.threadId,
       cwd: selection.cwd,
     });
+    if (selection.threadId !== undefined) {
+      await sendSessionCatchUp(agent, channel, session.threadId);
+    }
     await channel.send({
       text:
         selection.threadId === undefined

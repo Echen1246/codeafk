@@ -10,6 +10,8 @@ import type {
   AgentEvent,
   AgentSession,
   AgentSessionSummary,
+  AgentTranscriptMessage,
+  AgentTurn,
   ApprovalDecision,
   ListAgentSessionsOptions,
   StartSessionOptions,
@@ -392,11 +394,26 @@ export class CodexAdapter implements AgentAdapter {
     return Promise.all(summaries.map((summary) => this.withMessageCount(summary)));
   }
 
-  async sendMessage(sessionId: string, text: string): Promise<void> {
-    await this.request("turn/start", {
+  async readRecentMessages(
+    sessionId: string,
+    options: { limit?: number } = {}
+  ): Promise<AgentTranscriptMessage[]> {
+    await this.ensureInitialized(process.cwd());
+    const result = await this.request("thread/read", {
+      threadId: sessionId,
+      includeTurns: true,
+    });
+
+    return recentMessagesFromThreadReadResponse(result, options.limit ?? 10);
+  }
+
+  async sendMessage(sessionId: string, text: string): Promise<AgentTurn> {
+    const result = await this.request("turn/start", {
       threadId: sessionId,
       input: [textInput(text)],
     });
+
+    return turnFromStartResponse(result);
   }
 
   async steerActiveTurn(sessionId: string, turnId: string, text: string): Promise<void> {
@@ -555,6 +572,15 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   private handleNotification(method: string, params: unknown): void {
+    if (method === "turn/started" && isTurnStarted(params)) {
+      this.events.push({
+        type: "turn_started",
+        sessionId: params.threadId,
+        turnId: params.turn.id,
+      });
+      return;
+    }
+
     if (method === "item/agentMessage/delta" && isAgentMessageDelta(params)) {
       const current = this.messageBuffers.get(params.turnId) ?? "";
       this.messageBuffers.set(params.turnId, current + params.delta);
@@ -805,6 +831,16 @@ function sessionFromThreadResponse(result: unknown, fallbackCwd: string): AgentS
   };
 }
 
+function turnFromStartResponse(result: unknown): AgentTurn {
+  if (!isRecord(result) || !isRecord(result.turn) || typeof result.turn.id !== "string") {
+    throw new Error("Codex app-server returned an invalid turn response");
+  }
+
+  return {
+    turnId: result.turn.id,
+  };
+}
+
 function sessionSummariesFromThreadListResponse(result: unknown): AgentSessionSummary[] {
   if (!isRecord(result) || !Array.isArray(result.data)) {
     throw new Error("Codex app-server returned an invalid thread list response");
@@ -849,6 +885,64 @@ function countMessagesInThreadReadResponse(result: unknown): number | undefined 
   return count;
 }
 
+function recentMessagesFromThreadReadResponse(
+  result: unknown,
+  limit: number
+): AgentTranscriptMessage[] {
+  if (!isRecord(result) || !isRecord(result.thread) || !Array.isArray(result.thread.turns)) {
+    throw new Error("Codex app-server returned an invalid thread read response");
+  }
+
+  const messages: AgentTranscriptMessage[] = [];
+  for (const turn of result.thread.turns) {
+    if (!isRecord(turn) || !Array.isArray(turn.items)) {
+      continue;
+    }
+
+    for (const item of turn.items) {
+      const transcriptMessage = transcriptMessageFromThreadItem(item);
+      if (transcriptMessage !== null) {
+        messages.push(transcriptMessage);
+      }
+    }
+  }
+
+  return messages.slice(-safeMessageLimit(limit));
+}
+
+function transcriptMessageFromThreadItem(item: unknown): AgentTranscriptMessage | null {
+  if (!isRecord(item)) {
+    return null;
+  }
+
+  if (item.type === "userMessage" && Array.isArray(item.content)) {
+    const text = item.content
+      .flatMap((contentItem) =>
+        isTextUserInput(contentItem) && contentItem.text.trim().length > 0
+          ? [contentItem.text.trim()]
+          : []
+      )
+      .join("\n\n");
+
+    return text.length === 0 ? null : { role: "user", text };
+  }
+
+  if (item.type === "agentMessage" && typeof item.text === "string") {
+    const text = item.text.trim();
+    return text.length === 0 ? null : { role: "agent", text };
+  }
+
+  return null;
+}
+
+function safeMessageLimit(limit: number): number {
+  if (!Number.isFinite(limit)) {
+    return 10;
+  }
+
+  return Math.max(0, Math.floor(limit));
+}
+
 function displayThreadTitle(thread: {
   name: string | null;
   preview: string;
@@ -860,6 +954,18 @@ function displayThreadTitle(thread: {
 
 function firstLine(text: string): string {
   return text.split(/\r?\n/)[0]?.trim() ?? "";
+}
+
+function isTurnStarted(value: unknown): value is {
+  threadId: string;
+  turn: { id: string };
+} {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    isRecord(value.turn) &&
+    typeof value.turn.id === "string"
+  );
 }
 
 function isThreadSummary(value: unknown): value is {
@@ -879,6 +985,10 @@ function isThreadSummary(value: unknown): value is {
     typeof value.updatedAt === "number" &&
     (typeof value.name === "string" || value.name === null)
   );
+}
+
+function isTextUserInput(value: unknown): value is { type: "text"; text: string } {
+  return isRecord(value) && value.type === "text" && typeof value.text === "string";
 }
 
 function isAgentMessageDelta(value: unknown): value is {

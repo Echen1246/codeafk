@@ -1,14 +1,16 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
-import type { AgentAdapter, AgentEvent, AgentSession } from "./agent/types.js";
+import type { AgentAdapter, AgentEvent, AgentSession, AgentTranscriptMessage } from "./agent/types.js";
 import { ApprovalRegistry } from "./approval.js";
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "./channel/types.js";
+import { renderDiffHtml } from "./diff-format.js";
 import { selectSessionFromChannel } from "./session-picker.js";
 
-const CHECKPOINT_THREE_BUSY_MESSAGE =
-  "Codex is still working on the previous message. Wait for it to finish, then send the next instruction.";
 const DIFF_ATTACHMENT_MIME_TYPE = "text/x-diff";
+const HTML_DIFF_ATTACHMENT_MIME_TYPE = "text/html";
+const CATCH_UP_MESSAGE_LIMIT = 10;
+const CATCH_UP_TEXT_LIMIT = 1800;
 
 export type OrchestratorOptions = {
   agent: AgentAdapter;
@@ -21,13 +23,14 @@ export type OrchestratorOptions = {
 };
 
 export async function runOrchestrator(options: OrchestratorOptions): Promise<void> {
-  let activeTurn = false;
+  let activeTurnId: string | null = null;
   let currentSession = options.session;
   const approvals = options.approvals ?? new ApprovalRegistry();
   const latestDiffs = new Map<string, LatestDiff>();
   const channelEvents = (options.channelEvents ?? options.channel.events())[Symbol.asyncIterator]();
   const setSession = async (session: AgentSession): Promise<void> => {
     currentSession = session;
+    activeTurnId = null;
     latestDiffs.clear();
     await options.onSessionChanged?.(session);
   };
@@ -37,17 +40,22 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<voi
       forwardChannelEvents(options, approvals, channelEvents, {
         getSession: () => currentSession,
         setSession,
-        isTurnActive: () => activeTurn,
-        setTurnActive: (value) => {
-          activeTurn = value;
+        getActiveTurnId: () => activeTurnId,
+        setActiveTurnId: (turnId) => {
+          activeTurnId = turnId;
         },
       }),
       forwardAgentEvents(
         options,
         approvals,
         () => currentSession,
-        () => {
-          activeTurn = false;
+        (turnId) => {
+          activeTurnId = turnId;
+        },
+        (turnId) => {
+          if (turnId === undefined || activeTurnId === turnId) {
+            activeTurnId = null;
+          }
         },
         latestDiffs
       ),
@@ -94,13 +102,20 @@ async function handleChannelMessage(
     return;
   }
 
-  if (state.isTurnActive()) {
-    await options.channel.send({ text: CHECKPOINT_THREE_BUSY_MESSAGE });
+  const activeTurnId = state.getActiveTurnId();
+  if (activeTurnId !== null) {
+    try {
+      await options.agent.steerActiveTurn(state.getSession().sessionId, activeTurnId, text);
+      await options.channel.send({ text: "Steered Codex." });
+    } catch (error) {
+      state.setActiveTurnId(null);
+      await options.channel.send({ text: `Could not steer Codex: ${asError(error).message}` });
+    }
     return;
   }
 
-  state.setTurnActive(true);
-  await options.agent.sendMessage(state.getSession().sessionId, text);
+  const turn = await options.agent.sendMessage(state.getSession().sessionId, text);
+  state.setActiveTurnId(turn.turnId);
   await options.channel.send({ text: "Sent to Codex." });
 }
 
@@ -109,7 +124,7 @@ async function handleSessionSwitch(
   channelEvents: AsyncIterator<ChannelEvent>,
   state: ChannelForwardingState
 ): Promise<void> {
-  if (state.isTurnActive()) {
+  if (state.getActiveTurnId() !== null) {
     await options.channel.send({
       text: "Codex is still working. Switch sessions after it finishes.",
     });
@@ -132,6 +147,9 @@ async function handleSessionSwitch(
       : await options.agent.resumeSession(selection.threadId, { cwd: selection.cwd });
 
   await state.setSession(session);
+  if (selection.threadId !== undefined) {
+    await sendSessionCatchUp(options.agent, options.channel, session.threadId);
+  }
   await options.channel.send({
     text:
       selection.threadId === undefined
@@ -165,7 +183,8 @@ async function forwardAgentEvents(
   options: OrchestratorOptions,
   approvals: ApprovalRegistry,
   getSession: () => AgentSession,
-  markTurnComplete: () => void,
+  markTurnStarted: (turnId: string) => void,
+  markTurnComplete: (turnId?: string) => void,
   latestDiffs: Map<string, LatestDiff>
 ): Promise<void> {
   for await (const event of options.agent.streamEvents()) {
@@ -177,24 +196,37 @@ async function forwardAgentEvents(
       continue;
     }
 
-    await handleAgentEvent(options.channel, approvals, event, markTurnComplete, latestDiffs);
+    await handleAgentEvent(
+      options.channel,
+      approvals,
+      event,
+      markTurnStarted,
+      markTurnComplete,
+      latestDiffs
+    );
   }
 }
 
 type ChannelForwardingState = {
   getSession: () => AgentSession;
   setSession: (session: AgentSession) => Promise<void>;
-  isTurnActive: () => boolean;
-  setTurnActive: (value: boolean) => void;
+  getActiveTurnId: () => string | null;
+  setActiveTurnId: (turnId: string | null) => void;
 };
 
 async function handleAgentEvent(
   channel: MessageChannel,
   approvals: ApprovalRegistry,
   event: AgentEvent,
-  markTurnComplete: () => void,
+  markTurnStarted: (turnId: string) => void,
+  markTurnComplete: (turnId?: string) => void,
   latestDiffs: Map<string, LatestDiff>
 ): Promise<void> {
+  if (event.type === "turn_started") {
+    markTurnStarted(event.turnId);
+    return;
+  }
+
   if (event.type === "message_complete" && event.text.trim().length > 0) {
     await channel.send({ text: event.text });
     return;
@@ -206,7 +238,7 @@ async function handleAgentEvent(
   }
 
   if (event.type === "turn_complete") {
-    markTurnComplete();
+    markTurnComplete(event.turnId);
     const latestDiff = latestDiffs.get(event.turnId) ?? diffFromTurnComplete(event);
     latestDiffs.delete(event.turnId);
     await channel.send(await formatTurnComplete(event, latestDiff));
@@ -222,7 +254,7 @@ async function handleAgentEvent(
   }
 
   if (event.type === "error") {
-    markTurnComplete();
+    markTurnComplete(event.turnId);
     await channel.send({ text: `Codex error: ${event.summary}` });
   }
 }
@@ -231,24 +263,53 @@ function formatApproval(event: Extract<AgentEvent, { type: "approval_required" }
   return `${event.title}\n${event.summary}`;
 }
 
+export async function sendSessionCatchUp(
+  agent: AgentAdapter,
+  channel: MessageChannel,
+  sessionId: string
+): Promise<void> {
+  let messages: AgentTranscriptMessage[];
+  try {
+    messages = await agent.readRecentMessages(sessionId, { limit: CATCH_UP_MESSAGE_LIMIT });
+  } catch (error) {
+    await channel.send({ text: `Could not load recent context: ${asError(error).message}` });
+    return;
+  }
+
+  if (messages.length === 0) {
+    return;
+  }
+
+  await channel.send({ text: "Recent context from this Codex session:" });
+  for (const message of messages) {
+    await channel.send({ text: formatTranscriptMessage(message) });
+  }
+}
+
+function formatTranscriptMessage(message: AgentTranscriptMessage): string {
+  const label = message.role === "user" ? "You" : "Codex";
+  const text = truncateText(message.text, CATCH_UP_TEXT_LIMIT);
+  return `${label}:\n${text}`;
+}
+
 async function formatTurnComplete(
   event: Extract<AgentEvent, { type: "turn_complete" }>,
   latestDiff: LatestDiff | undefined
 ): Promise<ChannelMessage> {
   const text = formatTurnCompleteText(event, latestDiff);
-  const attachment = await readDiffAttachment(event.turnId, latestDiff);
+  const attachments = await readDiffAttachments(event.turnId, latestDiff);
 
-  if (attachment.warning !== undefined) {
-    return { text: `${text}\n\n${attachment.warning}` };
+  if (attachments.warning !== undefined) {
+    return { text: `${text}\n\n${attachments.warning}` };
   }
 
-  if (attachment.file === undefined) {
+  if (attachments.files === undefined) {
     return { text };
   }
 
   return {
     text,
-    attachments: [attachment.file],
+    attachments: attachments.files,
   };
 }
 
@@ -293,11 +354,11 @@ function formatChangeSummary(latestDiff: LatestDiff | undefined): string | null 
     .join("\n")}`;
 }
 
-async function readDiffAttachment(
+async function readDiffAttachments(
   turnId: string,
   latestDiff: LatestDiff | undefined
 ): Promise<{
-  file?: NonNullable<ChannelMessage["attachments"]>[number];
+  files?: NonNullable<ChannelMessage["attachments"]>;
   warning?: string;
 }> {
   if (latestDiff?.diffRef === undefined) {
@@ -317,12 +378,22 @@ async function readDiffAttachment(
     return {};
   }
 
+  const diff = content.toString("utf8");
+  const attachmentName = safeAttachmentName(turnId);
+
   return {
-    file: {
-      filename: `${safeAttachmentName(turnId)}.diff`,
-      content,
-      mimeType: DIFF_ATTACHMENT_MIME_TYPE,
-    },
+    files: [
+      {
+        filename: `${attachmentName}.html`,
+        content: Buffer.from(renderDiffHtml(diff), "utf8"),
+        mimeType: HTML_DIFF_ATTACHMENT_MIME_TYPE,
+      },
+      {
+        filename: `${attachmentName}.diff`,
+        content,
+        mimeType: DIFF_ATTACHMENT_MIME_TYPE,
+      },
+    ],
   };
 }
 
@@ -354,6 +425,14 @@ function pluralize(word: string, count: number): string {
 function safeAttachmentName(turnId: string): string {
   const filename = basename(turnId).replace(/[^A-Za-z0-9._-]/g, "_");
   return filename.length === 0 ? "codex-diff" : filename;
+}
+
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1)}...`;
 }
 
 function shortThreadId(threadId: string): string {

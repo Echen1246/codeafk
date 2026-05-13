@@ -96,9 +96,9 @@ Both adapters present the same surface to the daemon. Adding future channels (SM
 
 **Mobile diff viewing**
 
-In v0.5+, when a diff needs review, the daemon renders it as a syntax-highlighted HTML file locally and sends it as a file attachment via Telegram/Discord. The user opens it in their messaging app's built-in viewer. No hosted page, no signed URLs, no relay.
+In v0, when a diff needs review, the daemon renders a lightweight HTML file locally and sends it alongside the raw `.diff` attachment via Telegram. The user opens it in their messaging app's built-in viewer. No hosted page, no signed URLs, no relay.
 
-For very small diffs (≤30 lines), the daemon sends the diff inline as a code block in the chat.
+In v0.5, the HTML diff can become richer and syntax-highlighted. For very small diffs (≤30 lines), the daemon may also send the diff inline as a code block in the chat.
 
 ---
 
@@ -398,7 +398,7 @@ User runs `codex resume thr_abc123` in their preferred shell or IDE terminal, an
 
 ### v0 — Codex + Telegram, minimal
 
-The shippable weekend project. One binary. No hosted infra. Telegram only. Codex only. Shell approvals only. No diff viewer (diffs are sent as raw text or as a `.diff` file attachment).
+The shippable weekend project. One binary. No hosted infra. Telegram only. Codex only. Shell approvals only. Diffs are sent as local HTML and raw `.diff` file attachments.
 
 Deliverables:
 
@@ -411,7 +411,7 @@ Deliverables:
 - Receive Codex agent messages buffered → Telegram
 - Shell command approval flow with inline buttons
 - `turn/completed` summary with file list
-- Raw `.diff` attachment on completion
+- HTML and raw `.diff` attachments on completion
 - Basic error handling and "Codex crashed" reporting
 
 Success criterion: Eddie can leave for the gym, send a real prompt from his phone, get a real response, approve a real command, and come back to a usable diff he can review and resume in `codex resume`.
@@ -420,7 +420,7 @@ Success criterion: Eddie can leave for the gym, send a real prompt from his phon
 
 - Discord channel adapter
 - File-change approval flow
-- Syntax-highlighted HTML diff attachment (one Shiki render → HTML file → send via channel)
+- Richer syntax-highlighted diff attachment (one Shiki render → HTML file → send via channel)
 - Channel-side `/help`, `/status`, `/stop`, `/resume` commands
 - Heartbeat and "laptop offline" detection
 - Bot token rotation flow

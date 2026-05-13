@@ -2,6 +2,11 @@ export type ApprovalDecision = "accept" | "decline" | "cancel" | "acceptForSessi
 
 export type AgentEvent =
   | {
+      type: "turn_started";
+      sessionId: string;
+      turnId: string;
+    }
+  | {
       type: "message_delta";
       sessionId: string;
       turnId: string;
@@ -79,11 +84,24 @@ export type AgentSessionSummary = {
   messageCount?: number;
 };
 
+export type AgentTurn = {
+  turnId: string;
+};
+
+export type AgentTranscriptMessage = {
+  role: "user" | "agent";
+  text: string;
+};
+
 export interface AgentAdapter {
   startSession(options: StartSessionOptions): Promise<AgentSession>;
   resumeSession(sessionId: string, options?: { cwd?: string }): Promise<AgentSession>;
   listSessions(options?: ListAgentSessionsOptions): Promise<AgentSessionSummary[]>;
-  sendMessage(sessionId: string, text: string): Promise<void>;
+  readRecentMessages(
+    sessionId: string,
+    options?: { limit?: number }
+  ): Promise<AgentTranscriptMessage[]>;
+  sendMessage(sessionId: string, text: string): Promise<AgentTurn>;
   steerActiveTurn(sessionId: string, turnId: string, text: string): Promise<void>;
   answerApproval(sessionId: string, approvalId: string, decision: ApprovalDecision): Promise<void>;
   interrupt(sessionId: string, turnId: string): Promise<void>;

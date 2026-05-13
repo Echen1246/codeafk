@@ -8,6 +8,7 @@ import type {
   AgentEvent,
   AgentSession,
   AgentSessionSummary,
+  AgentTranscriptMessage,
   ApprovalDecision,
   ListAgentSessionsOptions,
   StartSessionOptions,
@@ -31,6 +32,26 @@ describe("runOrchestrator", () => {
 
     expect(agent.sentMessages).toEqual([{ sessionId: "thr_123", text: "list files" }]);
     expect(channel.sentMessages).toEqual(["Sent to Codex."]);
+  });
+
+  it("steers Telegram messages into an active Codex turn", async () => {
+    const channel = new FakeChannel([
+      { type: "message", text: "do work", fromUserId: "u1" },
+      { type: "message", text: "actually focus on tests", fromUserId: "u1" },
+    ]);
+    const agent = new FakeAgent([]);
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(agent.sentMessages).toEqual([{ sessionId: "thr_123", text: "do work" }]);
+    expect(agent.steeredMessages).toEqual([
+      {
+        sessionId: "thr_123",
+        turnId: "turn_1",
+        text: "actually focus on tests",
+      },
+    ]);
+    expect(channel.sentMessages).toEqual(["Sent to Codex.", "Steered Codex."]);
   });
 
   it("forwards completed Codex messages and turn summaries to the channel", async () => {
@@ -92,12 +113,18 @@ describe("runOrchestrator", () => {
     expect(channel.sentAttachments).toEqual([
       [
         {
+          filename: "turn_1.html",
+          content: expect.any(Buffer),
+          mimeType: "text/html",
+        },
+        {
           filename: "turn_1.diff",
           content: Buffer.from(diff),
           mimeType: "text/x-diff",
         },
       ],
     ]);
+    expect(channel.sentAttachments[0]?.[0]?.content.toString("utf8")).toContain("+hello world");
   });
 
   it("sends approval buttons and forwards button decisions to Codex", async () => {
@@ -195,6 +222,40 @@ describe("runOrchestrator", () => {
     );
   });
 
+  it("sends bounded recent context when switching to an old session", async () => {
+    const channel = new FakeChannel([
+      { type: "message", text: "/switch", fromUserId: "u1" },
+      { type: "message", text: "2", fromUserId: "u1" },
+      { type: "message", text: "1", fromUserId: "u1" },
+    ]);
+    const agent = new FakeAgent(
+      [],
+      [
+        sessionSummary({
+          threadId: "thr_other",
+          cwd: "/other",
+          title: "work in other project",
+        }),
+        sessionSummary({
+          threadId: "thr_123",
+          cwd: "/workspace",
+          title: "current work",
+        }),
+      ],
+      [
+        { role: "user", text: "fix auth" },
+        { role: "agent", text: "I changed the callback test." },
+      ]
+    );
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(channel.sentMessages).toContain("Recent context from this Codex session:");
+    expect(channel.sentMessages).toContain("You:\nfix auth");
+    expect(channel.sentMessages).toContain("Codex:\nI changed the callback test.");
+    expect(channel.sentMessages.at(-1)).toBe("Resumed thr_other. What would you like to do?");
+  });
+
   it("does not switch sessions while Codex is still working", async () => {
     const channel = new FakeChannel([
       { type: "message", text: "do work", fromUserId: "u1" },
@@ -248,6 +309,7 @@ class FakeChannel implements MessageChannel {
 
 class FakeAgent implements AgentAdapter {
   readonly sentMessages: Array<{ sessionId: string; text: string }> = [];
+  readonly steeredMessages: Array<{ sessionId: string; turnId: string; text: string }> = [];
   readonly approvals: Array<{ sessionId: string; approvalId: string; decision: ApprovalDecision }> =
     [];
   readonly listCalls: ListAgentSessionsOptions[] = [];
@@ -256,7 +318,8 @@ class FakeAgent implements AgentAdapter {
 
   constructor(
     private readonly agentEvents: AgentEvent[],
-    private readonly sessions: AgentSessionSummary[] = []
+    private readonly sessions: AgentSessionSummary[] = [],
+    private readonly recentMessages: AgentTranscriptMessage[] = []
   ) {}
 
   async startSession(options: StartSessionOptions): Promise<AgentSession> {
@@ -290,11 +353,17 @@ class FakeAgent implements AgentAdapter {
     return this.sessions.filter((item) => item.cwd === options.cwd);
   }
 
-  async sendMessage(sessionId: string, text: string): Promise<void> {
-    this.sentMessages.push({ sessionId, text });
+  async readRecentMessages(): Promise<AgentTranscriptMessage[]> {
+    return this.recentMessages;
   }
 
-  async steerActiveTurn(): Promise<void> {
+  async sendMessage(sessionId: string, text: string): Promise<{ turnId: string }> {
+    this.sentMessages.push({ sessionId, text });
+    return { turnId: `turn_${this.sentMessages.length}` };
+  }
+
+  async steerActiveTurn(sessionId: string, turnId: string, text: string): Promise<void> {
+    this.steeredMessages.push({ sessionId, turnId, text });
     return Promise.resolve();
   }
 

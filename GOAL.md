@@ -306,6 +306,10 @@ If you hit a dead end on a checkpoint and can't figure out why, **stop and expla
 
 Don't spend hours guessing. The user is around and prefers a 5-minute conversation over a 5-hour blind alley.
 
+## Known follow-ups
+
+- Desktop Codex does not appear to live-refresh an already-open chat when Agent Pager appends to the same thread through `codex app-server`. For v0, document this in `apgr resume` output or README: users may need to reopen/resume the thread locally with `codex resume <thread-id>` to see the phone-session transcript.
+
 ---
 
 ## v0 done condition

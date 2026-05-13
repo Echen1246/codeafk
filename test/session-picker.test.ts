@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { AgentAdapter, AgentEvent, AgentSession, AgentSessionSummary, ApprovalDecision } from "../src/agent/types.js";
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentSession,
+  AgentSessionSummary,
+  AgentTranscriptMessage,
+  ApprovalDecision,
+} from "../src/agent/types.js";
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "../src/channel/types.js";
 import {
   formatSessionList,
@@ -196,8 +203,12 @@ class FakeAgent implements AgentAdapter {
     return this.sessions;
   }
 
-  async sendMessage(): Promise<void> {
-    return Promise.resolve();
+  async readRecentMessages(): Promise<AgentTranscriptMessage[]> {
+    return [];
+  }
+
+  async sendMessage(): Promise<{ turnId: string }> {
+    return { turnId: "turn_1" };
   }
 
   async steerActiveTurn(): Promise<void> {
