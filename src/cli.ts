@@ -10,7 +10,7 @@ type CommandName = "init" | "start" | "stop" | "resume" | "status";
 type Command = {
   name: CommandName;
   description: string;
-  run: () => void;
+  run: () => Promise<void> | void;
 };
 
 const commands: Command[] = [
@@ -53,7 +53,7 @@ ${commands.map((command) => `  ${command.name.padEnd(8)} ${command.description}`
 `);
 }
 
-function main(args: string[]): void {
+async function main(args: string[]): Promise<void> {
   const [commandName] = args;
 
   if (commandName === undefined || commandName === "--help" || commandName === "-h") {
@@ -70,7 +70,11 @@ function main(args: string[]): void {
     return;
   }
 
-  command.run();
+  await command.run();
 }
 
-main(process.argv.slice(2));
+main(process.argv.slice(2)).catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(message);
+  process.exitCode = 1;
+});
