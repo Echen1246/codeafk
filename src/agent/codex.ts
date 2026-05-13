@@ -1,0 +1,650 @@
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { existsSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
+import type { Readable, Writable } from "node:stream";
+
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentSession,
+  ApprovalDecision,
+  StartSessionOptions,
+} from "./types.js";
+
+const CLIENT_NAME = "agent_pager";
+const CLIENT_TITLE = "Agent Pager";
+const CLIENT_VERSION = "0.0.0";
+const MAX_STDERR_TAIL_CHARS = 4000;
+const MACOS_CODEX_APP_PATH = "/Applications/Codex.app/Contents/Resources/codex";
+const SUPPORTED_CODEX_CLI_VERSION = "0.130.0-alpha.5";
+
+type JsonRpcId = number | string;
+type JsonObject = Record<string, unknown>;
+type CodexProcess = ChildProcessByStdio<Writable, Readable, Readable>;
+
+export type JsonRpcOutboundMessage =
+  | { id: JsonRpcId; method: string; params?: unknown }
+  | { method: string; params?: unknown }
+  | { id: JsonRpcId; result: unknown }
+  | { id: JsonRpcId; error: { code: number; message: string; data?: unknown } };
+
+type PendingRequest = {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+};
+
+type QueueWaiter<T> = {
+  resolve: (result: IteratorResult<T>) => void;
+  reject: (error: Error) => void;
+};
+
+export class JsonRpcLineParser {
+  private buffer = "";
+
+  push(chunk: string): JsonObject[] {
+    this.buffer += chunk;
+    const messages: JsonObject[] = [];
+
+    while (true) {
+      const newlineIndex = this.buffer.indexOf("\n");
+      if (newlineIndex === -1) {
+        return messages;
+      }
+
+      const line = this.buffer.slice(0, newlineIndex).trim();
+      this.buffer = this.buffer.slice(newlineIndex + 1);
+
+      if (line.length === 0) {
+        continue;
+      }
+
+      const parsed: unknown = JSON.parse(line);
+      if (!isRecord(parsed)) {
+        throw new Error("JSON-RPC line must decode to an object");
+      }
+      messages.push(parsed);
+    }
+  }
+}
+
+export function encodeJsonRpcMessage(message: JsonRpcOutboundMessage): string {
+  return `${JSON.stringify(message)}\n`;
+}
+
+export function parseCodexCliVersion(output: string): string | null {
+  const match = output.match(/\bcodex-cli\s+([^\s]+)/);
+  return match?.[1] ?? null;
+}
+
+class JsonRpcResponseError extends Error {
+  constructor(
+    readonly code: number,
+    message: string,
+    readonly data?: unknown
+  ) {
+    super(message);
+    this.name = "JsonRpcResponseError";
+  }
+}
+
+class JsonRpcConnection {
+  private readonly parser = new JsonRpcLineParser();
+  private readonly decoder = new StringDecoder("utf8");
+  private readonly pending = new Map<string, PendingRequest>();
+  private nextId = 1;
+  private closed = false;
+
+  constructor(
+    private readonly stdin: Writable,
+    stdout: Readable,
+    private readonly onNotification: (method: string, params: unknown) => void,
+    private readonly onServerRequest: (method: string, params: unknown) => Promise<unknown>
+  ) {
+    stdout.on("data", (chunk: Buffer) => {
+      this.handleChunk(this.decoder.write(chunk));
+    });
+  }
+
+  request(method: string, params?: unknown): Promise<unknown> {
+    const id = this.nextId;
+    this.nextId += 1;
+
+    const response = new Promise<unknown>((resolve, reject) => {
+      this.pending.set(String(id), { resolve, reject });
+    });
+
+    const message = params === undefined ? { id, method } : { id, method, params };
+    this.writeMessage(message).catch((error: unknown) => {
+      const pending = this.pending.get(String(id));
+      this.pending.delete(String(id));
+      pending?.reject(asError(error));
+    });
+
+    return response;
+  }
+
+  notify(method: string, params?: unknown): Promise<void> {
+    const message = params === undefined ? { method } : { method, params };
+    return this.writeMessage(message);
+  }
+
+  closeWithError(error: Error): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    for (const pending of this.pending.values()) {
+      pending.reject(error);
+    }
+    this.pending.clear();
+  }
+
+  private handleChunk(chunk: string): void {
+    let messages: JsonObject[];
+    try {
+      messages = this.parser.push(chunk);
+    } catch (error) {
+      this.closeWithError(asError(error));
+      return;
+    }
+
+    for (const message of messages) {
+      this.handleMessage(message);
+    }
+  }
+
+  private handleMessage(message: JsonObject): void {
+    const method = message.method;
+    const id = getJsonRpcId(message);
+
+    if (typeof method === "string" && id !== null) {
+      this.handleServerRequest(id, method, message.params);
+      return;
+    }
+
+    if (typeof method === "string") {
+      this.onNotification(method, message.params);
+      return;
+    }
+
+    if (id !== null) {
+      this.handleResponse(id, message);
+    }
+  }
+
+  private handleResponse(id: JsonRpcId, message: JsonObject): void {
+    const pending = this.pending.get(String(id));
+    if (pending === undefined) {
+      return;
+    }
+
+    this.pending.delete(String(id));
+
+    if (isRecord(message.error)) {
+      const code = typeof message.error.code === "number" ? message.error.code : -32000;
+      const text =
+        typeof message.error.message === "string" ? message.error.message : "JSON-RPC request failed";
+      pending.reject(new JsonRpcResponseError(code, text, message.error.data));
+      return;
+    }
+
+    pending.resolve(message.result);
+  }
+
+  private handleServerRequest(id: JsonRpcId, method: string, params: unknown): void {
+    this.onServerRequest(method, params)
+      .then((result) => this.writeMessage({ id, result: result ?? {} }))
+      .catch((error: unknown) => {
+        const rpcError = error instanceof JsonRpcResponseError ? error : null;
+        const responseError =
+          rpcError === null
+            ? { code: -32603, message: asError(error).message }
+            : { code: rpcError.code, message: rpcError.message, data: rpcError.data };
+        return this.writeMessage({ id, error: responseError });
+      })
+      .catch((error: unknown) => {
+        this.closeWithError(asError(error));
+      });
+  }
+
+  private writeMessage(message: JsonRpcOutboundMessage): Promise<void> {
+    if (this.closed) {
+      return Promise.reject(new Error("Cannot write to a closed JSON-RPC connection"));
+    }
+
+    return new Promise((resolve, reject) => {
+      this.stdin.write(encodeJsonRpcMessage(message), (error) => {
+        if (error === null || error === undefined) {
+          resolve();
+          return;
+        }
+        reject(error);
+      });
+    });
+  }
+}
+
+class AsyncEventQueue<T> implements AsyncIterable<T>, AsyncIterator<T> {
+  private readonly items: T[] = [];
+  private readonly waiters: QueueWaiter<T>[] = [];
+  private closed = false;
+  private failure: Error | null = null;
+
+  push(item: T): void {
+    if (this.closed || this.failure !== null) {
+      return;
+    }
+
+    const waiter = this.waiters.shift();
+    if (waiter !== undefined) {
+      waiter.resolve({ value: item, done: false });
+      return;
+    }
+
+    this.items.push(item);
+  }
+
+  close(): void {
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) {
+      waiter.resolve({ value: undefined, done: true });
+    }
+  }
+
+  fail(error: Error): void {
+    this.failure = error;
+    for (const waiter of this.waiters.splice(0)) {
+      waiter.reject(error);
+    }
+  }
+
+  next(): Promise<IteratorResult<T>> {
+    const item = this.items.shift();
+    if (item !== undefined) {
+      return Promise.resolve({ value: item, done: false });
+    }
+
+    if (this.failure !== null) {
+      return Promise.reject(this.failure);
+    }
+
+    if (this.closed) {
+      return Promise.resolve({ value: undefined, done: true });
+    }
+
+    return new Promise((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
+    });
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return this;
+  }
+}
+
+type CodexAdapterOptions = {
+  codexPath?: string;
+  env?: NodeJS.ProcessEnv;
+  onWarning?: (message: string) => void;
+};
+
+export class CodexAdapter implements AgentAdapter {
+  private readonly codexPath: string;
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly onWarning: (message: string) => void;
+  private readonly events = new AsyncEventQueue<AgentEvent>();
+  private readonly messageBuffers = new Map<string, string>();
+  private process: CodexProcess | null = null;
+  private connection: JsonRpcConnection | null = null;
+  private initialized = false;
+  private stderrTail = "";
+  private versionChecked = false;
+
+  constructor(options: CodexAdapterOptions = {}) {
+    this.codexPath = options.codexPath ?? defaultCodexPath();
+    this.env = options.env ?? process.env;
+    this.onWarning = options.onWarning ?? ((message) => console.warn(message));
+  }
+
+  async startSession(options: StartSessionOptions): Promise<AgentSession> {
+    await this.ensureInitialized(options.cwd);
+    const result = await this.request("thread/start", {
+      model: options.model ?? null,
+      cwd: options.cwd,
+      approvalPolicy: options.approvalPolicy ?? "never",
+      sandbox: options.sandbox ?? "read-only",
+      serviceName: CLIENT_NAME,
+    });
+
+    return sessionFromThreadResponse(result, options.cwd);
+  }
+
+  async resumeSession(sessionId: string): Promise<AgentSession> {
+    await this.ensureInitialized(process.cwd());
+    const result = await this.request("thread/resume", { threadId: sessionId });
+    return sessionFromThreadResponse(result, process.cwd());
+  }
+
+  async sendMessage(sessionId: string, text: string): Promise<void> {
+    await this.request("turn/start", {
+      threadId: sessionId,
+      input: [textInput(text)],
+    });
+  }
+
+  async steerActiveTurn(sessionId: string, turnId: string, text: string): Promise<void> {
+    await this.request("turn/steer", {
+      threadId: sessionId,
+      expectedTurnId: turnId,
+      input: [textInput(text)],
+    });
+  }
+
+  async answerApproval(
+    _sessionId: string,
+    _approvalId: string,
+    _decision: ApprovalDecision
+  ): Promise<void> {
+    throw new Error("Codex approval responses are not implemented until checkpoint 4");
+  }
+
+  async interrupt(sessionId: string, turnId: string): Promise<void> {
+    await this.request("turn/interrupt", { threadId: sessionId, turnId });
+  }
+
+  async *streamEvents(sessionId: string): AsyncIterable<AgentEvent> {
+    for await (const event of this.events) {
+      if (event.sessionId === sessionId) {
+        yield event;
+      }
+    }
+  }
+
+  async dispose(): Promise<void> {
+    this.events.close();
+    this.connection?.closeWithError(new Error("Codex adapter disposed"));
+
+    if (this.process === null || this.process.killed) {
+      return;
+    }
+
+    this.process.kill("SIGTERM");
+  }
+
+  private async ensureInitialized(cwd: string): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+
+    await this.checkCodexVersion(cwd);
+    this.startProcess(cwd);
+
+    await this.request("initialize", {
+      clientInfo: {
+        name: CLIENT_NAME,
+        title: CLIENT_TITLE,
+        version: CLIENT_VERSION,
+      },
+      capabilities: {
+        experimentalApi: true,
+      },
+    });
+    await this.connection?.notify("initialized");
+    this.initialized = true;
+  }
+
+  private startProcess(cwd: string): void {
+    if (this.process !== null) {
+      return;
+    }
+
+    this.process = spawn(this.codexPath, ["app-server", "--listen", "stdio://"], {
+      cwd,
+      env: this.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    this.connection = new JsonRpcConnection(
+      this.process.stdin,
+      this.process.stdout,
+      (method, params) => this.handleNotification(method, params),
+      (method) => this.handleServerRequest(method)
+    );
+    this.process.stderr.setEncoding("utf8");
+    this.process.stderr.on("data", (chunk: string) => {
+      this.stderrTail = (this.stderrTail + chunk).slice(-MAX_STDERR_TAIL_CHARS);
+    });
+
+    this.process.once("error", (error) => this.handleProcessFailure(error));
+    this.process.once("exit", (code, signal) => {
+      const stderr = this.stderrTail.trim();
+      const suffix = stderr.length === 0 ? "" : `\n\nCodex stderr:\n${stderr}`;
+      this.handleProcessFailure(
+        new Error(`Codex app-server exited with code ${code} signal ${signal}${suffix}`)
+      );
+    });
+  }
+
+  private async checkCodexVersion(cwd: string): Promise<void> {
+    if (this.versionChecked) {
+      return;
+    }
+    this.versionChecked = true;
+
+    try {
+      const output = await collectCommandOutput(this.codexPath, ["--version"], cwd, this.env);
+      const version = parseCodexCliVersion(output);
+      if (version !== null && version !== SUPPORTED_CODEX_CLI_VERSION) {
+        this.onWarning(
+          `Warning: expected codex-cli ${SUPPORTED_CODEX_CLI_VERSION}, found ${version}. App-server protocol may differ.`
+        );
+      }
+    } catch (error) {
+      this.onWarning(`Warning: could not read Codex CLI version: ${asError(error).message}`);
+    }
+  }
+
+  private request(method: string, params?: unknown): Promise<unknown> {
+    if (this.connection === null) {
+      return Promise.reject(new Error("Codex app-server is not running"));
+    }
+    return this.connection.request(method, params);
+  }
+
+  private handleNotification(method: string, params: unknown): void {
+    if (method === "item/agentMessage/delta" && isAgentMessageDelta(params)) {
+      const current = this.messageBuffers.get(params.turnId) ?? "";
+      this.messageBuffers.set(params.turnId, current + params.delta);
+      this.events.push({
+        type: "message_delta",
+        sessionId: params.threadId,
+        turnId: params.turnId,
+        text: params.delta,
+      });
+      return;
+    }
+
+    if (method === "item/completed" && isAgentMessageCompleted(params)) {
+      this.messageBuffers.set(params.turnId, params.item.text);
+      this.events.push({
+        type: "message_complete",
+        sessionId: params.threadId,
+        turnId: params.turnId,
+        text: params.item.text,
+      });
+      return;
+    }
+
+    if (method === "turn/completed" && isTurnCompleted(params)) {
+      const summary = this.messageBuffers.get(params.turn.id);
+      this.events.push({
+        type: "turn_complete",
+        sessionId: params.threadId,
+        turnId: params.turn.id,
+        status: params.turn.status,
+        ...(summary === undefined ? {} : { summary }),
+      });
+      return;
+    }
+
+    if (method === "error" && isErrorNotification(params)) {
+      this.events.push({
+        type: "error",
+        sessionId: params.threadId,
+        turnId: params.turnId,
+        summary: params.error.message,
+        ...(params.error.additionalDetails === null ? {} : { detailsRef: params.error.additionalDetails }),
+      });
+    }
+  }
+
+  private handleServerRequest(method: string): Promise<unknown> {
+    return Promise.reject(
+      new JsonRpcResponseError(-32601, `Server request ${method} is not implemented in checkpoint 1`)
+    );
+  }
+
+  private handleProcessFailure(error: Error): void {
+    this.connection?.closeWithError(error);
+    this.events.fail(error);
+  }
+}
+
+function textInput(text: string): JsonObject {
+  return {
+    type: "text",
+    text,
+    text_elements: [],
+  };
+}
+
+function defaultCodexPath(): string {
+  if (existsSync(MACOS_CODEX_APP_PATH)) {
+    return MACOS_CODEX_APP_PATH;
+  }
+
+  return "codex";
+}
+
+function sessionFromThreadResponse(result: unknown, fallbackCwd: string): AgentSession {
+  if (!isRecord(result) || !isRecord(result.thread) || typeof result.thread.id !== "string") {
+    throw new Error("Codex app-server returned an invalid thread response");
+  }
+
+  return {
+    sessionId: result.thread.id,
+    threadId: result.thread.id,
+    cwd: typeof result.cwd === "string" ? result.cwd : fallbackCwd,
+    model: typeof result.model === "string" ? result.model : "unknown",
+  };
+}
+
+function isAgentMessageDelta(value: unknown): value is {
+  threadId: string;
+  turnId: string;
+  delta: string;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    typeof value.turnId === "string" &&
+    typeof value.delta === "string"
+  );
+}
+
+function isAgentMessageCompleted(value: unknown): value is {
+  threadId: string;
+  turnId: string;
+  item: { type: "agentMessage"; text: string };
+} {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    typeof value.turnId === "string" &&
+    isRecord(value.item) &&
+    value.item.type === "agentMessage" &&
+    typeof value.item.text === "string"
+  );
+}
+
+function isTurnCompleted(value: unknown): value is {
+  threadId: string;
+  turn: { id: string; status: "completed" | "interrupted" | "failed" };
+} {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    isRecord(value.turn) &&
+    typeof value.turn.id === "string" &&
+    (value.turn.status === "completed" ||
+      value.turn.status === "interrupted" ||
+      value.turn.status === "failed")
+  );
+}
+
+function isErrorNotification(value: unknown): value is {
+  threadId: string;
+  turnId: string;
+  error: { message: string; additionalDetails: string | null };
+} {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    typeof value.turnId === "string" &&
+    isRecord(value.error) &&
+    typeof value.error.message === "string" &&
+    (typeof value.error.additionalDetails === "string" || value.error.additionalDetails === null)
+  );
+}
+
+function getJsonRpcId(message: JsonObject): JsonRpcId | null {
+  const id = message.id;
+  if (typeof id === "number" || typeof id === "string") {
+    return id;
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+function collectCommandOutput(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let output = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve(output);
+        return;
+      }
+      reject(new Error(`${command} ${args.join(" ")} exited with code ${code}`));
+    });
+  });
+}

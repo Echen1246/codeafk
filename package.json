@@ -1,0 +1,25 @@
+{
+  "name": "agent-pager",
+  "version": "0.0.0",
+  "description": "A pager for your coding agent.",
+  "type": "module",
+  "bin": {
+    "apgr": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json && chmod +x dist/cli.js",
+    "dev:local-loop": "tsx src/dev/local-loop.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.18.3",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.6"
+  }
+}
