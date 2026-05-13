@@ -14,10 +14,10 @@ describe("ApprovalRegistry", () => {
     });
 
     expect(buttons).toEqual([
-      { label: "Approve", callbackId: "apgr:1" },
-      { label: "Deny", callbackId: "apgr:2" },
+      { label: "Approve", callbackId: "afk:1" },
+      { label: "Deny", callbackId: "afk:2" },
     ]);
-    expect(approvals.resolveCallback("apgr:1")).toEqual({
+    expect(approvals.resolveCallback("afk:1")).toEqual({
       approval: {
         sessionId: "thr_123",
         turnId: "turn_1",
@@ -27,6 +27,6 @@ describe("ApprovalRegistry", () => {
       },
       decision: "accept",
     });
-    expect(approvals.resolveCallback("apgr:2")).toBeNull();
+    expect(approvals.resolveCallback("afk:2")).toBeNull();
   });
 });

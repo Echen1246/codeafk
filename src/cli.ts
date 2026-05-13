@@ -18,7 +18,7 @@ let fatalHandlersInstalled = false;
 const commands: Command[] = [
   {
     name: "init",
-    description: "Pair Agent Pager with a messaging channel",
+    description: "Pair AFK with a messaging channel",
     run: initCommand,
   },
   {
@@ -38,17 +38,18 @@ const commands: Command[] = [
   },
   {
     name: "status",
-    description: "Show Agent Pager status",
+    description: "Show AFK status",
     run: statusCommand,
   },
 ];
 
 function printHelp(): void {
-  console.log(`Agent Pager
+  console.log(`AFK
 
 Usage:
-  apgr <command>
-  apgr --help
+  afk              Start Away Mode in the current workspace
+  afk <command>
+  afk --help
 
 Commands:
 ${commands.map((command) => `  ${command.name.padEnd(8)} ${command.description}`).join("\n")}
@@ -58,7 +59,12 @@ ${commands.map((command) => `  ${command.name.padEnd(8)} ${command.description}`
 async function main(args: string[]): Promise<void> {
   const [commandName] = args;
 
-  if (commandName === undefined || commandName === "--help" || commandName === "-h") {
+  if (commandName === undefined) {
+    await startCommand();
+    return;
+  }
+
+  if (commandName === "--help" || commandName === "-h") {
     printHelp();
     return;
   }
@@ -67,7 +73,7 @@ async function main(args: string[]): Promise<void> {
 
   if (command === undefined) {
     console.error(`Unknown command: ${commandName}`);
-    console.error("Run `apgr --help` to see available commands.");
+    console.error("Run `afk --help` to see available commands.");
     process.exitCode = 1;
     return;
   }
@@ -89,11 +95,11 @@ function installFatalErrorHandlers(): void {
 
   fatalHandlersInstalled = true;
   process.on("uncaughtException", (error) => {
-    console.error(`Agent Pager crashed: ${errorStack(error)}`);
+    console.error(`AFK crashed: ${errorStack(error)}`);
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
-    console.error(`Agent Pager crashed: ${errorStack(reason)}`);
+    console.error(`AFK crashed: ${errorStack(reason)}`);
     process.exit(1);
   });
 }

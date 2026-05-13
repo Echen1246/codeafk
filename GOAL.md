@@ -1,6 +1,6 @@
-# GOAL.md — Agent Pager Implementation Guide
+# GOAL.md — AFK Implementation Guide
 
-This file is the implementation guide for coding agents (Codex, Cursor, Claude Code) working on Agent Pager. Read this in full before writing code. Each checkpoint is an end-to-end demoable state, not a feature checklist.
+This file is the implementation guide for coding agents (Codex, Cursor, Claude Code) working on AFK. Read this in full before writing code. Each checkpoint is an end-to-end demoable state, not a feature checklist.
 
 If you are a coding agent and you find yourself wanting to build something not described here, **stop and ask the user**. Do not add features. Do not over-engineer. Resist the urge to make this a framework.
 
@@ -33,7 +33,7 @@ These rules hold across all checkpoints. Violating them is never acceptable, eve
 
 6. **No code, repo contents, or diffs are sent to any service other than the configured channel.** No telemetry, no error reporting to third-party services, no auto-uploaded logs.
 
-7. **One writer per Codex thread at a time.** The daemon owns the thread while Away Mode is ON. `apgr resume` releases the lock and ends Away Mode.
+7. **One writer per Codex thread at a time.** The daemon owns the thread while Away Mode is ON. `afk resume` releases the lock and ends Away Mode.
 
 8. **Diffs come through events, not on-demand calls.** Snapshot diffs when `turn/diff/updated` arrives. Do not implement a `getDiff()` method.
 
@@ -46,13 +46,13 @@ If a checkpoint would require violating any of these, the checkpoint is wrong. S
 - **Language:** TypeScript on Node.js (≥20)
 - **Package manager:** pnpm
 - **Build:** tsc → dist/, no bundler for v0
-- **Distribution:** `npm publish` as `agent-pager`, binary `apgr`
+- **Distribution:** `npm publish` as `codeafk`, binary `afk`
 - **Telegram SDK:** `node-telegram-bot-api` (or `grammy` if it's substantially better — flag the choice)
 - **Discord SDK:** deferred to v0.5 — do not install for v0
 - **Codex transport:** Node's `child_process.spawn` + line-delimited JSON over stdin/stdout
 - **Config format:** TOML (`@iarna/toml`)
-- **Config location:** `~/.config/apgr/config.toml` (use `env-paths` or hand-roll for cross-platform)
-- **Logging:** `pino` to file at `~/.local/state/apgr/apgr.log` + optional pretty stdout for `apgr start`
+- **Config location:** `~/.config/afk/config.toml` (use `env-paths` or hand-roll for cross-platform)
+- **Logging:** `pino` to file at `~/.local/state/afk/afk.log` + optional pretty stdout for `afk`
 - **Testing:** `vitest`
 
 Avoid adding more dependencies. If a checkpoint seems to require a new dependency, propose it to the user before installing.
@@ -62,7 +62,7 @@ Avoid adding more dependencies. If a checkpoint seems to require a new dependenc
 ## Repository layout
 
 ```
-agent-pager/
+codeafk/
 ├── README.md
 ├── SPEC.md
 ├── GOAL.md                 (this file)
@@ -78,7 +78,7 @@ agent-pager/
 │   │   ├── resume.ts
 │   │   └── status.ts
 │   ├── daemon.ts           (main daemon orchestration)
-│   ├── config.ts           (load/save ~/.config/apgr/config.toml)
+│   ├── config.ts           (load/save ~/.config/afk/config.toml)
 │   ├── agent/
 │   │   ├── types.ts        (AgentAdapter, AgentEvent interfaces)
 │   │   └── codex.ts        (CodexAdapter)
@@ -87,7 +87,7 @@ agent-pager/
 │   │   └── telegram.ts     (TelegramChannel)
 │   ├── orchestrator.ts     (translates AgentEvents → channel messages, channel events → adapter calls)
 │   ├── approval.ts         (pending-approval registry, button-callback resolution)
-│   └── log.ts              (pino setup)
+│   └── sleep.ts            (macOS caffeinate lifecycle)
 ├── test/
 │   └── ...
 └── dist/                   (gitignored, tsc output)
@@ -103,10 +103,10 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 0: Repo skeleton compiles and runs
 
-**Demo:** `pnpm install && pnpm build && ./dist/cli.js --help` prints a help message listing the commands `init`, `start`, `stop`, `resume`, `status`.
+**Demo:** `pnpm install && pnpm build && ./dist/cli.js --help` prints a help message showing bare `afk` as the default start path and listing the commands `init`, `start`, `stop`, `resume`, `status`.
 
 **Scope:**
-- `package.json` with bin entry `"apgr": "./dist/cli.js"`
+- `package.json` with bin entry `"afk": "./dist/cli.js"`
 - `tsconfig.json` (strict mode, target ES2022, module NodeNext)
 - `src/cli.ts` with command dispatch (use a tiny hand-rolled parser or `commander`)
 - All command files exist as stubs that print "not implemented"
@@ -140,9 +140,9 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ---
 
-### Checkpoint 2: `apgr init` + Telegram pairing
+### Checkpoint 2: `afk init` + Telegram pairing
 
-**Demo:** A new user runs `apgr init`, follows the prompts to create a Telegram bot via @BotFather, pastes the token, sends a message to their bot from their phone, and the CLI detects the message and pairs the chat_id. Re-running `apgr init` warns that pairing exists and asks to overwrite.
+**Demo:** A new user runs `afk init`, follows the prompts to create a Telegram bot via @BotFather, pastes the token, sends a message to their bot from their phone, and the CLI detects the message and pairs the chat_id. Re-running `afk init` warns that pairing exists and asks to overwrite.
 
 **Scope:**
 - `src/commands/init.ts`
@@ -163,13 +163,13 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 **Notes:**
 - Use Telegram's `getUpdates` with `timeout=30` for long polling during the "send me a message" wait
-- Once paired, immediately reply via Telegram: "Paired successfully. Run `apgr start` in a repo to begin."
+- Once paired, immediately reply via Telegram: "Paired successfully. Run `afk` in a repo to begin."
 
 ---
 
-### Checkpoint 3: `apgr start` end-to-end happy path
+### Checkpoint 3: `afk` end-to-end happy path
 
-**Demo:** Eddie runs `apgr start` in a real repo. From his phone via Telegram, he sends "list the files in src/". His bot replies "Sent to Codex." A few seconds later, the bot sends the file list as a Telegram message. He sends another prompt. Same thing. He runs `apgr stop` (or Ctrl+C), and the daemon shuts down cleanly. He runs `apgr resume`, sees `codex resume thr_xyz`, runs that in his terminal, and Codex picks up the conversation with full history.
+**Demo:** Eddie runs `afk` in a real repo. The daemon starts Codex, starts Telegram polling, and on macOS starts `caffeinate -dimsu` so the laptop stays awake. From his phone via Telegram, he sends "list the files in src/". His bot replies "Sent to Codex." A few seconds later, the bot sends the file list as a Telegram message. He sends another prompt. Same thing. He runs `afk stop` (or Ctrl+C), and the daemon shuts down cleanly, including the caffeinate child process. He runs `afk resume`, sees `codex resume thr_xyz`, runs that in his terminal, and Codex picks up the conversation with full history.
 
 **Scope:**
 - `src/daemon.ts` — orchestrates CodexAdapter + TelegramChannel
@@ -179,7 +179,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
   - CodexAdapter `turn_complete` → Telegram summary message
 - `src/commands/start.ts`, `stop.ts`, `resume.ts`, `status.ts`
 - Graceful shutdown on SIGINT/SIGTERM
-- The thread ID is persisted (in config or a state file) so `apgr resume` can print it
+- The thread ID is persisted (in config or a state file) so `afk resume` can print it
 
 **Out of scope:** Approvals (no shell commands needed for "list files" — Codex will just list them). Errors. Diffs. Multi-message buffering of agent thinking.
 
@@ -187,7 +187,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 - The `start` command should print clear status to stdout. The user runs it in a terminal that stays open.
 - Use a sensible buffering strategy: if `message_delta` events come in fast, send the consolidated `message_complete` text, not every delta.
 - Limit individual Telegram messages to 4000 chars (Telegram's limit is 4096; leave headroom). Split if necessary.
-- Save the thread ID to `~/.local/state/apgr/last-thread.json` so `apgr resume` can find it.
+- Save the thread ID to `~/.local/state/afk/last-thread.json` so `afk resume` can find it.
 
 ---
 
@@ -216,7 +216,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 **Scope:**
 - Handle `turn/diff/updated` in CodexAdapter → `diff_updated` AgentEvent
-- Snapshot the diff content from the event into `~/.local/state/apgr/diffs/<turnId>.diff`
+- Snapshot the diff content from the event into `~/.local/state/afk/diffs/<turnId>.diff`
 - On `turn_complete`, send the most recent `diffRef` as a Telegram file attachment
 - Include changed files and stats in the completion message
 
@@ -230,13 +230,13 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 6: Errors and resilience
 
-**Demo:** Eddie deliberately kills Codex mid-turn. The daemon reports "Codex crashed unexpectedly. Restart with `apgr start`" to Telegram. He restarts; everything works. He turns off his Wi-Fi for 30 seconds; the daemon recovers when Wi-Fi returns. Telegram messages sent during the outage are received once polling resumes.
+**Demo:** Eddie deliberately kills Codex mid-turn. The daemon reports "Codex crashed unexpectedly. Restart with `afk`" to Telegram. He restarts; everything works. He turns off his Wi-Fi for 30 seconds; the daemon recovers when Wi-Fi returns. Telegram messages sent during the outage are received once polling resumes.
 
 **Scope:**
 - Catch Codex subprocess exit; clean up; report to channel
 - Telegram long-poll retry with exponential backoff
 - Unhandled-rejection and uncaught-exception handlers that log clearly and exit cleanly
-- `apgr status` shows: Codex running/dead, channel connected/disconnected, current thread, uptime
+- `afk status` shows: Codex running/dead, channel connected/disconnected, current thread, uptime
 
 **Out of scope:** Auto-restart of Codex. Auto-reconnect to a "session" mid-thread (Codex's resume is the user's tool for that).
 
@@ -244,7 +244,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 7: v0 ship
 
-**Demo:** Eddie publishes `agent-pager@0.1.0` to npm. He installs it on a fresh machine via `npm install -g agent-pager`, runs `apgr init`, pairs Telegram, runs `apgr start` in a real project, and uses it through one real workout session. He returns and runs `codex resume thr_xyz` and continues the work.
+**Demo:** Eddie publishes `codeafk@0.1.0` to npm. He installs it on a fresh machine via `npm install -g codeafk`, runs `afk init`, pairs Telegram, runs `afk` in a real project, and uses it through one real workout session. He returns and runs `codex resume thr_xyz` and continues the work.
 
 **Scope:**
 - README polished with quick-start instructions, screenshots/GIFs of the Telegram flow, and a clear "this is experimental" note
@@ -312,9 +312,9 @@ v0 is done when this E2E flow works on Eddie's actual laptop and phone:
 
 1. He cloned the repo and ran `pnpm install && pnpm build && npm link`
 2. He created a Telegram bot via @BotFather
-3. He ran `apgr init`, pasted the token, sent a Telegram message to pair
+3. He ran `afk init`, pasted the token, sent a Telegram message to pair
 4. He `cd`'d into a real project he's working on
-5. He ran `apgr start`
+5. He ran `afk`
 6. He left the laptop, went to the gym
 7. From his phone, he sent a real prompt (something like "look at the failing test in X and propose a fix")
 8. He received Codex's response on Telegram
@@ -323,7 +323,7 @@ v0 is done when this E2E flow works on Eddie's actual laptop and phone:
 11. He opened the diff in Telegram, reviewed it on his phone
 12. He sent a follow-up prompt ("looks good, also do Y")
 13. He got another response
-14. He came home, ran `apgr resume`
+14. He came home, ran `afk resume`
 15. He ran the printed `codex resume thr_xyz` in his terminal
 16. The Codex TUI showed the full conversation history from the gym
 17. He continued working in the TUI

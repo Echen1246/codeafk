@@ -77,14 +77,14 @@ describe("runOrchestrator", () => {
   });
 
   it("sends changed file stats and the latest diff attachment when a turn completes", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "apgr-diff-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "afk-diff-test-"));
     const diffRef = join(directory, "turn_1.diff");
     const diff = [
       "diff --git a/README.md b/README.md",
       "--- a/README.md",
       "+++ b/README.md",
       "@@ -1 +1,2 @@",
-      " Agent Pager",
+      " AFK",
       "+hello world",
     ].join("\n");
     await writeFile(diffRef, diff);
@@ -128,7 +128,7 @@ describe("runOrchestrator", () => {
   });
 
   it("sends approval buttons and forwards button decisions to Codex", async () => {
-    const channel = new FakeChannel([{ type: "button_press", callbackId: "apgr:1", fromUserId: "u1" }]);
+    const channel = new FakeChannel([{ type: "button_press", callbackId: "afk:1", fromUserId: "u1" }]);
     const agent = new FakeAgent([
       {
         type: "approval_required",
@@ -147,8 +147,8 @@ describe("runOrchestrator", () => {
     expect(channel.sentMessages).toEqual(["Codex needs to run:\nnpm test", "Approved."]);
     expect(channel.sentButtons).toEqual([
       [
-        { label: "Approve", callbackId: "apgr:1" },
-        { label: "Deny", callbackId: "apgr:2" },
+        { label: "Approve", callbackId: "afk:1" },
+        { label: "Deny", callbackId: "afk:2" },
       ],
     ]);
     expect(agent.approvals).toEqual([

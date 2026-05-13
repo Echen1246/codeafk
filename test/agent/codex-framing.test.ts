@@ -57,8 +57,8 @@ describe("Codex CLI version parsing", () => {
 
 describe("Codex diff helpers", () => {
   it("uses XDG_STATE_HOME for diff snapshots when present", () => {
-    expect(getDiffDirectory({ XDG_STATE_HOME: "/tmp/apgr-state" })).toBe(
-      "/tmp/apgr-state/apgr/diffs"
+    expect(getDiffDirectory({ XDG_STATE_HOME: "/tmp/afk-state" })).toBe(
+      "/tmp/afk-state/afk/diffs"
     );
   });
 
@@ -69,7 +69,7 @@ describe("Codex diff helpers", () => {
       "--- a/README.md",
       "+++ b/README.md",
       "@@ -1,2 +1,3 @@",
-      " Agent Pager",
+      " AFK",
       "-old line",
       "+new line",
       "+hello world",

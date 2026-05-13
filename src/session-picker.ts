@@ -45,7 +45,7 @@ export async function selectSessionFromChannel(
 ): Promise<SessionSelection> {
   const initialPrompt =
     options.initialPrompt === undefined
-      ? `Pager started for ${basename(options.defaultCwd)}.\nSend /sessions to choose a project and Codex session.`
+      ? `AFK started for ${basename(options.defaultCwd)}.\nSend /sessions to choose a project and Codex session.`
       : options.initialPrompt;
 
   if (initialPrompt !== null) {

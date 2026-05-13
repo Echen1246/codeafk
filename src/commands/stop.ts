@@ -1,23 +1,24 @@
 import {
   isProcessRunning,
   markLastThreadStopped,
-  readLastThreadState,
+  readLastThreadStateWithPath,
 } from "../daemon.js";
 
 export async function stopCommand(): Promise<void> {
-  const state = await readLastThreadState();
+  const stateEntry = await readLastThreadStateWithPath();
 
-  if (state === null) {
-    console.log("No Agent Pager session found.");
+  if (stateEntry === null) {
+    console.log("No AFK session found.");
     return;
   }
 
+  const { state, statePath } = stateEntry;
   if (state.status !== "running" || !isProcessRunning(state.pid)) {
-    await markLastThreadStopped(state);
-    console.log("Agent Pager is not running.");
+    await markLastThreadStopped(state, statePath);
+    console.log("AFK is not running.");
     return;
   }
 
   process.kill(state.pid, "SIGTERM");
-  console.log(`Sent stop signal to apgr process ${state.pid}.`);
+  console.log(`Sent stop signal to afk process ${state.pid}.`);
 }

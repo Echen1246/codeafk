@@ -17,14 +17,15 @@ import type {
   StartSessionOptions,
 } from "./types.js";
 
-const CLIENT_NAME = "agent_pager";
-const CLIENT_TITLE = "Agent Pager";
+const CLIENT_NAME = "afk";
+const CLIENT_TITLE = "AFK";
 const CLIENT_VERSION = "0.0.0";
 const MAX_STDERR_TAIL_CHARS = 4000;
 const MACOS_CODEX_APP_PATH = "/Applications/Codex.app/Contents/Resources/codex";
 const SUPPORTED_CODEX_CLI_VERSION = "0.130.0-alpha.5";
 const DIFF_DIR_MODE = 0o700;
 const DIFF_FILE_MODE = 0o600;
+const APP_STATE_DIR = "afk";
 
 type JsonRpcId = number | string;
 type JsonObject = Record<string, unknown>;
@@ -774,7 +775,7 @@ export function getDiffDirectory(env: NodeJS.ProcessEnv = process.env): string {
       ? xdgStateHome
       : join(homedir(), ".local", "state");
 
-  return join(stateHome, "apgr", "diffs");
+  return join(stateHome, APP_STATE_DIR, "diffs");
 }
 
 export function summarizeUnifiedDiff(diff: string): {

@@ -13,10 +13,17 @@ import {
   isSessionSelectionAborted,
   selectSessionFromChannel,
 } from "./session-picker.js";
+import {
+  createSleepPreventer,
+  formatSleepPreventionStatus,
+  type SleepPreventer,
+} from "./sleep.js";
 
 const STATE_FILE_MODE = 0o600;
 const STATE_DIR_MODE = 0o700;
-const CODEX_CRASH_MESSAGE = "Codex crashed unexpectedly. Restart with `apgr start`.";
+const APP_STATE_DIR = "afk";
+const LEGACY_APP_STATE_DIR = "apgr";
+const CODEX_CRASH_MESSAGE = "Codex crashed unexpectedly. Restart with `afk`.";
 
 type AgentHealthStatus = "running" | "dead";
 type ChannelHealthStatus = "connected" | "disconnected";
@@ -44,6 +51,7 @@ export type DaemonOptions = {
   agent?: AgentAdapter & { dispose?: () => Promise<void> };
   channel?: MessageChannel;
   statePath?: string;
+  sleepPreventer?: SleepPreventer;
   stdout?: OutputWriter;
 };
 
@@ -54,7 +62,17 @@ export function getStatePath(env: NodeJS.ProcessEnv = process.env): string {
       ? xdgStateHome
       : join(homedir(), ".local", "state");
 
-  return join(stateHome, "apgr", "last-thread.json");
+  return join(stateHome, APP_STATE_DIR, "last-thread.json");
+}
+
+export function getLegacyStatePath(env: NodeJS.ProcessEnv = process.env): string {
+  const xdgStateHome = env.XDG_STATE_HOME;
+  const stateHome =
+    xdgStateHome !== undefined && xdgStateHome.length > 0
+      ? xdgStateHome
+      : join(homedir(), ".local", "state");
+
+  return join(stateHome, LEGACY_APP_STATE_DIR, "last-thread.json");
 }
 
 export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
@@ -82,8 +100,9 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       botToken: config.channel.bot_token,
       chatId: config.channel.chat_id,
       onConnectionStateChange: updateChannelStatus,
-    });
+  });
   const stdout = options.stdout ?? process.stdout;
+  const sleepPreventer = options.sleepPreventer ?? createSleepPreventer();
   const abortController = new AbortController();
   const startedAt = new Date().toISOString();
 
@@ -100,23 +119,28 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     statePath
   );
 
-  writeLine(stdout, "apgr is running.\n");
-  writeLine(stdout, `Workspace:  ${cwd}`);
-  writeLine(stdout, "Agent:      Codex");
-  writeLine(stdout, "Thread:     choosing");
-  writeLine(stdout, "Channel:    Telegram");
-  writeLine(stdout, "\nAway Mode is ON.");
-  writeLine(stdout, "Text your bot /sessions to choose a project and Codex session.");
-  writeLine(stdout, "Press Ctrl+C or run `apgr stop` to end.");
-
-  await channel.start();
-  const channelEvents = channel.events()[Symbol.asyncIterator]();
-
-  const removeSignalHandlers = installSignalHandlers(() => abortController.abort());
   let activeThreadId: string | null = null;
   let activeCwd = cwd;
+  let channelStarted = false;
+  let removeSignalHandlers = (): void => undefined;
 
   try {
+    const sleepStatus = sleepPreventer.start();
+    writeLine(stdout, "afk is running.\n");
+    writeLine(stdout, `Workspace:  ${cwd}`);
+    writeLine(stdout, "Agent:      Codex");
+    writeLine(stdout, "Thread:     choosing");
+    writeLine(stdout, "Channel:    Telegram");
+    writeLine(stdout, `Sleep:      ${formatSleepPreventionStatus(sleepStatus)}`);
+    writeLine(stdout, "\nAway Mode is ON.");
+    writeLine(stdout, "Text your bot /sessions to choose a project and Codex session.");
+    writeLine(stdout, "Press Ctrl+C or run `afk stop` to end.");
+
+    await channel.start();
+    channelStarted = true;
+    const channelEvents = channel.events()[Symbol.asyncIterator]();
+    removeSignalHandlers = installSignalHandlers(() => abortController.abort());
+
     const selection = await selectSessionFromChannel({
       agent,
       channel,
@@ -180,7 +204,10 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     await sendIfPossible(channel, CODEX_CRASH_MESSAGE);
   } finally {
     removeSignalHandlers();
-    await channel.stop();
+    await sleepPreventer.stop();
+    if (channelStarted) {
+      await channel.stop();
+    }
     await agent.dispose?.();
     channelStatus = "disconnected";
     await writeLastThreadState(
@@ -205,13 +232,33 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
 export async function readLastThreadState(
   statePath = getStatePath()
 ): Promise<LastThreadState | null> {
+  const resolvedStatePath = await resolveReadableStatePath(statePath);
+  if (resolvedStatePath === null) {
+    return null;
+  }
+
+  return readLastThreadStateAtPath(resolvedStatePath);
+}
+
+export async function readLastThreadStateWithPath(
+  statePath = getStatePath()
+): Promise<{ state: LastThreadState; statePath: string } | null> {
+  const resolvedStatePath = await resolveReadableStatePath(statePath);
+  if (resolvedStatePath === null) {
+    return null;
+  }
+
+  return {
+    state: await readLastThreadStateAtPath(resolvedStatePath),
+    statePath: resolvedStatePath,
+  };
+}
+
+async function readLastThreadStateAtPath(statePath: string): Promise<LastThreadState> {
   let rawState: string;
   try {
     rawState = await readFile(statePath, "utf8");
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return null;
-    }
     throw error;
   }
 
@@ -220,6 +267,32 @@ export async function readLastThreadState(
     throw new Error(`State file is invalid: ${statePath}`);
   }
   return parsed;
+}
+
+async function resolveReadableStatePath(statePath: string): Promise<string | null> {
+  if (await fileExists(statePath)) {
+    return statePath;
+  }
+
+  if (statePath !== getStatePath()) {
+    const legacySiblingStatePath = legacySiblingPath(statePath);
+    if (legacySiblingStatePath === null) {
+      return null;
+    }
+    return (await fileExists(legacySiblingStatePath)) ? legacySiblingStatePath : null;
+  }
+
+  const legacyStatePath = getLegacyStatePath();
+  return (await fileExists(legacyStatePath)) ? legacyStatePath : null;
+}
+
+function legacySiblingPath(statePath: string): string | null {
+  const stateDir = dirname(statePath);
+  if (basename(stateDir) !== APP_STATE_DIR) {
+    return null;
+  }
+
+  return join(dirname(stateDir), LEGACY_APP_STATE_DIR, basename(statePath));
 }
 
 export async function writeLastThreadState(
@@ -279,9 +352,21 @@ async function sendIfPossible(channel: MessageChannel, text: string): Promise<vo
 async function requireConfig(): Promise<AppConfig> {
   const config = await loadConfig();
   if (config === null) {
-    throw new Error("No Agent Pager config found. Run `apgr init` first.");
+    throw new Error("No AFK config found. Run `afk init` first.");
   }
   return config;
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await readFile(path, "utf8");
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function installSignalHandlers(onSignal: () => void): () => void {

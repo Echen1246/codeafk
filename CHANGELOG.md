@@ -6,12 +6,14 @@ Initial v0 release.
 
 ### Added
 
-- `apgr init` for Telegram bot pairing.
-- `apgr start`, `apgr stop`, `apgr status`, and `apgr resume`.
+- `afk init` for Telegram bot pairing.
+- `afk` as the one-command Away Mode start.
+- `afk start`, `afk stop`, `afk status`, and `afk resume`.
 - Telegram `/sessions` picker for choosing a recent project and Codex thread before starting work.
+- macOS sleep prevention via `caffeinate -dimsu` while Away Mode is active.
 - Codex app-server adapter for starting and steering turns, receiving messages, handling shell approvals, tracking completion, reading recent session context, and snapshotting diffs.
 - Telegram channel adapter with long polling, inline approval buttons, recent-context catch-up, and HTML/raw diff attachments.
-- Local state in `~/.local/state/apgr`.
+- Local state in `~/.local/state/afk`.
 - Owner-only config file writes for the Telegram bot token.
 - Crash reporting to Telegram when Codex exits unexpectedly.
 - Telegram polling retry with backoff.

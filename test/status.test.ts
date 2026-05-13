@@ -22,7 +22,7 @@ describe("formatStatusReport", () => {
       })
     ).toBe(
       [
-        "Agent Pager status",
+        "AFK status",
         "",
         "Channel: telegram (connected)",
         "Codex:  running",

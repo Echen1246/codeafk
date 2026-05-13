@@ -22,7 +22,7 @@ export function formatStatusReport(options: {
   now: Date;
   state: LastThreadState | null;
 }): string {
-  const lines = ["Agent Pager status", ""];
+  const lines = ["AFK status", ""];
 
   if (options.state === null) {
     lines.push(`Channel: ${options.configuredChannel}`);

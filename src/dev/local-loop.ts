@@ -36,7 +36,7 @@ try {
   }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`Agent Pager local loop failed:\n${message}`);
+  console.error(`AFK local loop failed:\n${message}`);
   process.exitCode = 1;
 } finally {
   await adapter.dispose();

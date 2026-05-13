@@ -180,8 +180,8 @@ describe("TelegramChannel", () => {
     await channel.send({
       text: "Approve command?",
       buttons: [
-        { label: "Approve", callbackId: "apgr:1" },
-        { label: "Deny", callbackId: "apgr:2" },
+        { label: "Approve", callbackId: "afk:1" },
+        { label: "Deny", callbackId: "afk:2" },
       ],
     });
 
@@ -194,8 +194,8 @@ describe("TelegramChannel", () => {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "Approve", callback_data: "apgr:1" },
-                { text: "Deny", callback_data: "apgr:2" },
+                { text: "Approve", callback_data: "afk:1" },
+                { text: "Deny", callback_data: "afk:2" },
               ],
             ],
           },
@@ -258,7 +258,7 @@ describe("TelegramChannel", () => {
               id: "cbq_1",
               from: { id: 456 },
               message: { chat: { id: 123 } },
-              data: "apgr:1",
+              data: "afk:1",
             },
           },
         ],
@@ -281,7 +281,7 @@ describe("TelegramChannel", () => {
 
     expect(event).toEqual({
       done: false,
-      value: { type: "button_press", callbackId: "apgr:1", fromUserId: "456" },
+      value: { type: "button_press", callbackId: "afk:1", fromUserId: "456" },
     });
     expect(requests.at(-1)).toBe("https://api.telegram.org/bottoken/answerCallbackQuery");
   });

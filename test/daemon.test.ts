@@ -17,23 +17,46 @@ import type {
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "../src/channel/types.js";
 import type { AppConfig } from "../src/config.js";
 import {
+  getLegacyStatePath,
   getStatePath,
   markLastThreadStopped,
   readLastThreadState,
+  readLastThreadStateWithPath,
   runDaemon,
   writeLastThreadState,
   type LastThreadState,
 } from "../src/daemon.js";
+import type { SleepPreventer, SleepPreventionStatus } from "../src/sleep.js";
 
 describe("daemon state", () => {
   it("uses XDG_STATE_HOME when present", () => {
-    expect(getStatePath({ XDG_STATE_HOME: "/tmp/apgr-state" })).toBe(
-      "/tmp/apgr-state/apgr/last-thread.json"
+    expect(getStatePath({ XDG_STATE_HOME: "/tmp/afk-state" })).toBe(
+      "/tmp/afk-state/afk/last-thread.json"
     );
   });
 
+  it("can read the legacy apgr state path during the rename", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
+    const env = { XDG_STATE_HOME: directory };
+    const state: LastThreadState = {
+      threadId: "thr_legacy",
+      cwd: "/workspace",
+      pid: 1234,
+      status: "stopped",
+      startedAt: "2026-05-13T00:00:00.000Z",
+    };
+
+    await writeLastThreadState(state, getLegacyStatePath(env));
+
+    await expect(readLastThreadState(getStatePath(env))).resolves.toEqual(state);
+    await expect(readLastThreadStateWithPath(getStatePath(env))).resolves.toMatchObject({
+      state,
+      statePath: getLegacyStatePath(env),
+    });
+  });
+
   it("round-trips last thread state", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "apgr-state-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
     const statePath = join(directory, "last-thread.json");
     const state: LastThreadState = {
       threadId: "thr_123",
@@ -50,7 +73,7 @@ describe("daemon state", () => {
   });
 
   it("marks a running thread as stopped", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "apgr-state-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
     const statePath = join(directory, "last-thread.json");
     const state: LastThreadState = {
       threadId: "thr_123",
@@ -71,8 +94,9 @@ describe("daemon state", () => {
   });
 
   it("reports Codex crashes to the channel and marks the last thread dead", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "apgr-state-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
     const statePath = join(directory, "last-thread.json");
+    const sleepPreventer = new FakeSleepPreventer();
     const channel = new FakeChannel([
       { type: "message", text: "/sessions", fromUserId: "u1" },
       { type: "message", text: "1", fromUserId: "u1" },
@@ -85,12 +109,15 @@ describe("daemon state", () => {
       config: testConfig,
       cwd: "/workspace",
       statePath,
+      sleepPreventer,
       stdout: { write: () => undefined },
     });
 
     expect(channel.sentMessages).toContain(
-      "Codex crashed unexpectedly. Restart with `apgr start`."
+      "Codex crashed unexpectedly. Restart with `afk`."
     );
+    expect(sleepPreventer.starts).toBe(1);
+    expect(sleepPreventer.stops).toBe(1);
     await expect(readLastThreadState(statePath)).resolves.toMatchObject({
       agentStatus: "dead",
       channelStatus: "disconnected",
@@ -100,7 +127,7 @@ describe("daemon state", () => {
   });
 
   it("updates daemon state when Telegram switches to another session", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "apgr-state-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
     const statePath = join(directory, "last-thread.json");
     const channel = new FakeChannel([
       { type: "message", text: "/sessions", fromUserId: "u1" },
@@ -128,6 +155,7 @@ describe("daemon state", () => {
       config: testConfig,
       cwd: "/workspace",
       statePath,
+      sleepPreventer: new FakeSleepPreventer(),
       stdout: { write: () => undefined },
     });
 
@@ -197,6 +225,20 @@ class CrashingAgent implements AgentAdapter {
 
   async *streamEvents(): AsyncIterable<AgentEvent> {
     throw new CodexProcessError("Codex app-server exited with code null signal SIGKILL");
+  }
+}
+
+class FakeSleepPreventer implements SleepPreventer {
+  starts = 0;
+  stops = 0;
+
+  start(): SleepPreventionStatus {
+    this.starts += 1;
+    return { type: "active", detail: "test sleep prevention" };
+  }
+
+  async stop(): Promise<void> {
+    this.stops += 1;
   }
 }
 

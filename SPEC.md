@@ -1,8 +1,8 @@
-# Agent Pager — Product Spec
+# AFK — Product Spec
 
 ## One-line concept
 
-A pager for your coding agent. You stay in the loop when you're away from keyboard.
+Go AFK without losing the loop. Your coding agent keeps working while you stay reachable from your phone.
 
 You leave the laptop running with Codex working on a task. From your phone — on Telegram or Discord — you receive updates, answer the agent's questions, approve risky actions, and steer it when needed. When you get back to your laptop, you resume the same Codex thread in your terminal and pick up where the agent left off.
 
@@ -14,7 +14,7 @@ Most products in this space are trying to remove the human from the loop. We're 
 
 Current coding agents don't have enough context or reliability to run unsupervised on real codebases for hours. They need a human in the approval seat — to clarify ambiguous requests, approve commands, redirect when they go off track, and review diffs. But the human leaves their desk for many reasons every day: workouts, meals, errands, walks, sleep. Today, that means the agent stops being useful the moment you step away.
 
-Agent Pager is the missing piece: a thin layer that lets the human stay reachable from anywhere, while the agent keeps working in a sandboxed, configured environment that the user already trusts.
+AFK is the missing piece: a thin layer that lets the human stay reachable from anywhere, while the agent keeps working in a sandboxed, configured environment that the user already trusts.
 
 We are not a mobile IDE. We are not an autonomous-agent platform. We are a pager.
 
@@ -55,7 +55,7 @@ Phone (Telegram or Discord app)
   ↕
 Telegram / Discord servers   (free, third-party)
   ↕  (outbound long-poll or webhook from daemon)
-Laptop daemon (apgr)
+Laptop daemon (afk)
   ↕  (stdio JSON-RPC)
 Codex app-server
   ↕
@@ -66,7 +66,7 @@ The daemon is the only process that talks to Codex. The phone never has a route 
 
 ### Components
 
-**Daemon (`apgr`)**
+**Daemon (`afk`)**
 
 A single binary the user runs on their laptop. Responsibilities:
 
@@ -112,9 +112,9 @@ These are architectural rules, not deployment notes. They must hold in all build
 
 3. **The daemon is the only client of Codex.** No other process, including the user's IDE, talks to the same app-server instance.
 
-4. **Inbound messages are authenticated by channel.** The daemon only accepts messages from the chat_id / user_id pre-configured during `apgr init`. Messages from any other source are dropped.
+4. **Inbound messages are authenticated by channel.** The daemon only accepts messages from the chat_id / user_id pre-configured during `afk init`. Messages from any other source are dropped.
 
-5. **The bot token is the user's secret.** It is stored locally (e.g. `~/.config/apgr/config.toml`) with file-mode 0600. It is never sent over the wire to anything except the channel's official API.
+5. **The bot token is the user's secret.** It is stored locally (e.g. `~/.config/afk/config.toml`) with file-mode 0600. It is never sent over the wire to anything except the channel's official API.
 
 6. **No code or repo contents leave the laptop except through the channel.** Diffs are sent as file attachments to Telegram/Discord; the user trusts these services with their messages. The daemon does not upload code to any other endpoint.
 
@@ -126,17 +126,17 @@ Only one writer owns a Codex thread at a time. This is enforced by explicit user
 
 **States:**
 
-- **Away Mode ON** — phone/daemon owns the thread. SMS prompts are forwarded to Codex. Local TUI use is discouraged (the daemon won't actively block it, but mixing both will produce a confusing dual-writer state the user can recover from with `apgr resume`).
+- **Away Mode ON** — phone/daemon owns the thread. SMS prompts are forwarded to Codex. Local TUI use is discouraged (the daemon won't actively block it, but mixing both will produce a confusing dual-writer state the user can recover from with `afk resume`).
 
-- **Away Mode OFF** — laptop/TUI owns the thread. Inbound messages from the phone receive a "Pager is paused, resume with `apgr start`" reply.
+- **Away Mode OFF** — laptop/TUI owns the thread. Inbound messages from the phone receive an "AFK is paused, resume with `afk`" reply.
 
 **Transitions:**
 
-- `apgr start` → Away Mode ON, daemon owns thread
-- `apgr stop` or `apgr resume` → Away Mode OFF, daemon releases lock
-- `apgr resume` additionally prints `codex resume <thread-id>` for the user to run in their terminal
+- `afk` or `afk start` → Away Mode ON, daemon owns thread
+- `afk stop` or `afk resume` → Away Mode OFF, daemon releases lock
+- `afk resume` additionally prints `codex resume <thread-id>` for the user to run in their terminal
 
-v0 does **not** implement automatic detection of "user is at laptop." If the user wants to take over, they explicitly run `apgr resume`.
+v0 does **not** implement automatic detection of "user is at laptop." If the user wants to take over, they explicitly run `afk resume`.
 
 ---
 
@@ -273,9 +273,9 @@ For v0, only these are implemented:
 ### First-time setup
 
 ```
-$ apgr init
+$ afk init
 
-Welcome to Agent Pager.
+Welcome to AFK.
 
 Choose your messaging channel:
   1) Telegram
@@ -295,36 +295,37 @@ Now send any message to your bot from your phone, then press Enter.
 > (waits)
 
 Detected message from @ayocheddie (chat_id 12345678).
-Pair this Telegram account with apgr? [y/n]: y
+Pair this Telegram account with afk? [y/n]: y
 
 Paired successfully.
-Config saved to ~/.config/apgr/config.toml
+Config saved to ~/.config/afk/config.toml
 
-You're ready. Try `apgr start` in a repo.
+You're ready. Try `afk` in a repo.
 ```
 
 ### Daily use
 
 ```
 $ cd ~/projects/myapp
-$ apgr start
+$ afk
 
-apgr is running.
+afk is running.
 
 Workspace:  ~/projects/myapp
 Agent:      Codex
 Thread:     thr_abc123 (new)
 Channel:    Telegram (@ayocheddie)
+Sleep:      active (caffeinate -dimsu)
 
 Away Mode is ON.
 Text your bot to send prompts to Codex.
-Press Ctrl+C or run `apgr stop` to end.
+Press Ctrl+C or run `afk stop` to end.
 ```
 
 Phone receives via Telegram:
 
 ```
-Pager started for myapp.
+AFK started for myapp.
 Send a message to begin, or /help for commands.
 ```
 
@@ -382,7 +383,7 @@ nice, also add a test for the expired-state case
 ### Returning to laptop
 
 ```
-$ apgr resume
+$ afk resume
 
 Away Mode stopped.
 
@@ -402,11 +403,11 @@ The shippable weekend project. One binary. No hosted infra. Telegram only. Codex
 
 Deliverables:
 
-- `apgr init` (Telegram channel setup, phone pairing)
-- `apgr start` (spawns Codex app-server, opens Telegram polling, starts thread)
-- `apgr stop`
-- `apgr resume` (prints `codex resume <thread-id>`)
-- `apgr status` (shows current thread, channel state, uptime)
+- `afk init` (Telegram channel setup, phone pairing)
+- `afk` / `afk start` (spawns Codex app-server, opens Telegram polling, starts thread, keeps macOS awake with `caffeinate`)
+- `afk stop`
+- `afk resume` (prints `codex resume <thread-id>`)
+- `afk status` (shows current thread, channel state, uptime)
 - Send prompts from phone → Codex `turn/start` or `turn/steer`
 - Receive Codex agent messages buffered → Telegram
 - Shell command approval flow with inline buttons
@@ -429,7 +430,7 @@ Success criterion: Eddie can leave for the gym, send a real prompt from his phon
 
 The VS Code extension is a convenience layer. It works in Cursor because Cursor uses the VS Code extension API. The extension does **not** try to mirror Cursor's native chat.
 
-- VS Code extension: `Agent Pager: Start Away Mode` command (spawns daemon as child process)
+- VS Code extension: `AFK: Start Away Mode` command (spawns daemon as child process)
 - Extension sidebar: shows current thread, channel pairing, recent phone activity log
 - Extension: "Resume from Phone Session" command, runs `codex resume <id>` in the integrated terminal
 - One-click pairing UI inside the extension
@@ -462,33 +463,33 @@ These share Codex's baton-pass model — they're CLI agents with resumable sessi
 - Web dashboard
 - Anything that requires running a public server
 
-If we later need any of these, they belong in a separate product, not in `apgr`.
+If we later need any of these, they belong in a separate product, not in `afk`.
 
 ---
 
 ## Naming
 
-- **Project name (public):** Agent Pager
-- **Repo:** `agent-pager`
-- **CLI binary:** `apgr`
-- **Tagline:** "A pager for your coding agent."
+- **Project name (public):** AFK
+- **Repo:** `codeafk`
+- **CLI binary:** `afk`
+- **Tagline:** "Go AFK without losing the loop."
 
-`apgr` is short, unique, doesn't collide with `pager` (which is overloaded with `$PAGER` semantics), and types easily.
+`afk` is short, unique, doesn't collide with `pager` (which is overloaded with `$PAGER` semantics), and types easily.
 
 ---
 
 ## Implementation choices
 
 - **Language:** TypeScript / Node.js. Reasons: Codex app-server is JSON-RPC over stdio (trivial in Node), Telegram and Discord have first-class Node SDKs, fast to ship, easy for contributors to extend. Future Rust rewrite is an option once the product is validated.
-- **Distribution:** `npm install -g agent-pager` for v0. Single-binary builds (via `pkg` or `bun build`) come later.
-- **Config:** `~/.config/apgr/config.toml` (Linux/macOS), `%APPDATA%\apgr\config.toml` (Windows). File mode 0600 on POSIX.
-- **Logging:** Structured logs to `~/.local/state/apgr/apgr.log`. No telemetry sent anywhere.
+- **Distribution:** `npm install -g codeafk` for v0. Single-binary builds (via `pkg` or `bun build`) come later.
+- **Config:** `~/.config/afk/config.toml` (Linux/macOS), `%APPDATA%\afk\config.toml` (Windows). File mode 0600 on POSIX.
+- **Logging:** Structured logs to `~/.local/state/afk/afk.log`. No telemetry sent anywhere.
 
 ---
 
 ## Risks and open questions
 
-**Codex app-server is marked experimental.** The protocol may change. Mitigation: pin Codex version in `apgr`'s config and validate on startup. Surface clear errors when the user's installed Codex version is unsupported.
+**Codex app-server is marked experimental.** The protocol may change. Mitigation: pin Codex version in `afk`'s config and validate on startup. Surface clear errors when the user's installed Codex version is unsupported.
 
 **Telegram bot tokens, if leaked, allow anyone to message the bot.** Mitigation: the daemon enforces a `chat_id` whitelist set during pairing. Even a leaked token gets a stranger nowhere because the daemon ignores their messages.
 
@@ -496,7 +497,7 @@ If we later need any of these, they belong in a separate product, not in `apgr`.
 
 **Laptop sleep / network loss.** v0 surfaces this as best-effort: if the daemon is dead, Telegram messages queue at Telegram, and the daemon will see them when it next polls. If the laptop is gone for hours, the user will figure it out from the silence. v0.5 adds a heartbeat status command.
 
-**Codex session resumption is imperfect** — there are known issues where long sessions get truncated on resume. Mitigation: surface this in `apgr resume` output ("resumed session, note: very long sessions may have truncated history") and link to the relevant Codex issue.
+**Codex session resumption is imperfect** — there are known issues where long sessions get truncated on resume. Mitigation: surface this in `afk resume` output ("resumed session, note: very long sessions may have truncated history") and link to the relevant Codex issue.
 
 **Concurrency between phone and laptop.** Already covered by the Away Mode lock. If users find themselves wanting both, we revisit in v1.
 
@@ -504,7 +505,7 @@ If we later need any of these, they belong in a separate product, not in `apgr`.
 
 ## Success criteria
 
-We will consider v0 a success if **one real person** — Eddie — uses Agent Pager to drive a real Codex session from their phone during one real workout, returns to their laptop, runs `codex resume`, and finds the work was actually useful.
+We will consider v0 a success if **one real person** — Eddie — uses AFK to drive a real Codex session from their phone during one real workout, returns to their laptop, runs `codex resume`, and finds the work was actually useful.
 
 We will consider the project a success if 100 GitHub stars and 10 outside contributors arrive within 90 days of public release. Beyond that is gravy.
 

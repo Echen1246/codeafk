@@ -1,7 +1,7 @@
 import { createInterface, type Interface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { configExists, getConfigPath, saveConfig } from "../config.js";
+import { findExistingConfigPath, getConfigPath, saveConfig } from "../config.js";
 import {
   describeTelegramUser,
   nextTelegramOffset,
@@ -24,10 +24,11 @@ export async function initCommand(): Promise<void> {
 async function runInit(rl: Interface): Promise<void> {
   const configPath = getConfigPath();
 
-  console.log("Welcome to Agent Pager.\n");
+  console.log("Welcome to AFK.\n");
 
-  if (await configExists(configPath)) {
-    console.log(`Existing pairing found at ${configPath}.`);
+  const existingConfigPath = await findExistingConfigPath();
+  if (existingConfigPath !== null) {
+    console.log(`Existing pairing found at ${existingConfigPath}.`);
     const overwrite = await askYesNo(rl, "Overwrite it? [y/n]: ");
     if (!overwrite) {
       console.log("Leaving existing config unchanged.");
@@ -56,7 +57,7 @@ async function runInit(rl: Interface): Promise<void> {
   const displayName = describeTelegramUser(pairedUpdate.from, pairedUpdate.chatId);
   console.log(`\nDetected message from ${displayName} (chat_id ${pairedUpdate.chatId}).`);
 
-  const pair = await askYesNo(rl, "Pair this Telegram account with apgr? [y/n]: ");
+  const pair = await askYesNo(rl, "Pair this Telegram account with afk? [y/n]: ");
   if (!pair) {
     console.log("Pairing cancelled. No config was written.");
     return;
@@ -78,12 +79,12 @@ async function runInit(rl: Interface): Promise<void> {
 
   await telegram.sendMessage(
     pairedUpdate.chatId,
-    "Paired successfully. Run `apgr start` in a repo to begin."
+    "Paired successfully. Run `afk` in a repo to begin."
   );
 
   console.log("\nPaired successfully.");
   console.log(`Config saved to ${configPath}`);
-  console.log("\nYou're ready. Try `apgr start` in a repo.");
+  console.log("\nYou're ready. Try `afk` in a repo.");
 }
 
 async function chooseTelegram(rl: Interface): Promise<void> {

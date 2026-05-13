@@ -1,10 +1,10 @@
 {
-  "name": "agent-pager",
+  "name": "codeafk",
   "version": "0.1.0",
-  "description": "Stay in the Codex loop from Telegram while you are away from your laptop.",
+  "description": "Go AFK while Codex keeps working through Telegram.",
   "type": "module",
   "bin": {
-    "apgr": "dist/cli.js"
+    "afk": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc --project tsconfig.json && chmod +x dist/cli.js",
@@ -27,6 +27,7 @@
     "dist/diff-format.js",
     "dist/orchestrator.js",
     "dist/session-picker.js",
+    "dist/sleep.js",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
@@ -37,7 +38,7 @@
     "telegram",
     "cli",
     "agent",
-    "pager",
+    "afk",
     "away-mode"
   ],
   "author": "Echen1246",

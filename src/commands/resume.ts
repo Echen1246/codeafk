@@ -1,22 +1,23 @@
 import {
   isProcessRunning,
   markLastThreadStopped,
-  readLastThreadState,
+  readLastThreadStateWithPath,
 } from "../daemon.js";
 
 export async function resumeCommand(): Promise<void> {
-  const state = await readLastThreadState();
+  const stateEntry = await readLastThreadStateWithPath();
 
-  if (state === null) {
-    console.log("No Agent Pager thread found.");
+  if (stateEntry === null) {
+    console.log("No AFK thread found.");
     return;
   }
 
+  const { state, statePath } = stateEntry;
   if (state.status === "running" && isProcessRunning(state.pid)) {
     process.kill(state.pid, "SIGTERM");
   }
 
-  await markLastThreadStopped(state);
+  await markLastThreadStopped(state, statePath);
 
   if (state.threadId === null) {
     console.log("Away Mode stopped.");

@@ -62,7 +62,7 @@ export class ApprovalRegistry {
     label: string,
     decision: ApprovalDecision
   ): { label: string; callbackId: string } {
-    const callbackId = `apgr:${this.nextCallbackId}`;
+    const callbackId = `afk:${this.nextCallbackId}`;
     this.nextCallbackId += 1;
     this.callbacks.set(callbackId, { approvalId, decision });
 
