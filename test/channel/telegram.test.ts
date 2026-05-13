@@ -37,6 +37,7 @@ describe("TelegramChannel", () => {
     await expect(channel.getUpdates({ offset: 40, timeoutSeconds: 30 })).resolves.toEqual([
       {
         updateId: 42,
+        type: "message",
         chatId: 123,
         from: { id: 456, username: "eddie" },
         text: "pair me",
@@ -48,7 +49,7 @@ describe("TelegramChannel", () => {
         body: {
           offset: 40,
           timeout: 30,
-          allowed_updates: ["message"],
+          allowed_updates: ["message", "callback_query"],
         },
       },
     ]);
@@ -103,6 +104,88 @@ describe("TelegramChannel", () => {
       done: false,
       value: { type: "message", text: "send to codex", fromUserId: "456" },
     });
+  });
+
+  it("sends inline keyboard buttons", async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const channel = new TelegramChannel({
+      botToken: "token",
+      chatId: 123,
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: JSON.parse(String(init?.body)),
+        });
+        return jsonResponse({ ok: true, result: {} });
+      },
+    });
+
+    await channel.send({
+      text: "Approve command?",
+      buttons: [
+        { label: "Approve", callbackId: "apgr:1" },
+        { label: "Deny", callbackId: "apgr:2" },
+      ],
+    });
+
+    expect(requests).toEqual([
+      {
+        url: "https://api.telegram.org/bottoken/sendMessage",
+        body: {
+          chat_id: 123,
+          text: "Approve command?",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "Approve", callback_data: "apgr:1" },
+                { text: "Deny", callback_data: "apgr:2" },
+              ],
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("streams callback queries from the paired chat", async () => {
+    const requests: string[] = [];
+    const responses = [
+      { ok: true, result: [] },
+      {
+        ok: true,
+        result: [
+          {
+            update_id: 10,
+            callback_query: {
+              id: "cbq_1",
+              from: { id: 456 },
+              message: { chat: { id: 123 } },
+              data: "apgr:1",
+            },
+          },
+        ],
+      },
+      { ok: true, result: true },
+    ];
+    const channel = new TelegramChannel({
+      botToken: "token",
+      chatId: 123,
+      fetch: async (input) => {
+        requests.push(String(input));
+        return jsonResponse(responses.shift());
+      },
+    });
+
+    await channel.start();
+    const iterator = channel.events()[Symbol.asyncIterator]();
+    const event = await iterator.next();
+    await channel.stop();
+
+    expect(event).toEqual({
+      done: false,
+      value: { type: "button_press", callbackId: "apgr:1", fromUserId: "456" },
+    });
+    expect(requests.at(-1)).toBe("https://api.telegram.org/bottoken/answerCallbackQuery");
   });
 });
 

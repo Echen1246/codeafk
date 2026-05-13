@@ -1,4 +1,5 @@
 import type { AgentAdapter, AgentEvent, AgentSession } from "./agent/types.js";
+import { ApprovalRegistry } from "./approval.js";
 import type { ChannelEvent, MessageChannel } from "./channel/types.js";
 
 const CHECKPOINT_THREE_BUSY_MESSAGE =
@@ -8,18 +9,20 @@ export type OrchestratorOptions = {
   agent: AgentAdapter;
   channel: MessageChannel;
   session: AgentSession;
+  approvals?: ApprovalRegistry;
   signal?: AbortSignal;
 };
 
 export async function runOrchestrator(options: OrchestratorOptions): Promise<void> {
   let activeTurn = false;
+  const approvals = options.approvals ?? new ApprovalRegistry();
 
   await Promise.race([
     Promise.all([
-      forwardChannelEvents(options, () => activeTurn, (value) => {
+      forwardChannelEvents(options, approvals, () => activeTurn, (value) => {
         activeTurn = value;
       }),
-      forwardAgentEvents(options, () => {
+      forwardAgentEvents(options, approvals, () => {
         activeTurn = false;
       }),
     ]),
@@ -29,6 +32,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<voi
 
 async function forwardChannelEvents(
   options: OrchestratorOptions,
+  approvals: ApprovalRegistry,
   isTurnActive: () => boolean,
   setTurnActive: (value: boolean) => void
 ): Promise<void> {
@@ -39,6 +43,11 @@ async function forwardChannelEvents(
 
     if (event.type === "message") {
       await handleChannelMessage(options, event, isTurnActive, setTurnActive);
+      continue;
+    }
+
+    if (event.type === "button_press") {
+      await handleButtonPress(options, approvals, event);
     }
   }
 }
@@ -64,8 +73,30 @@ async function handleChannelMessage(
   await options.channel.send({ text: "Sent to Codex." });
 }
 
+async function handleButtonPress(
+  options: OrchestratorOptions,
+  approvals: ApprovalRegistry,
+  event: Extract<ChannelEvent, { type: "button_press" }>
+): Promise<void> {
+  const resolved = approvals.resolveCallback(event.callbackId);
+  if (resolved === null) {
+    await options.channel.send({ text: "This approval is no longer pending." });
+    return;
+  }
+
+  await options.agent.answerApproval(
+    resolved.approval.sessionId,
+    resolved.approval.approvalId,
+    resolved.decision
+  );
+  await options.channel.send({
+    text: resolved.decision === "accept" ? "Approved." : "Denied.",
+  });
+}
+
 async function forwardAgentEvents(
   options: OrchestratorOptions,
+  approvals: ApprovalRegistry,
   markTurnComplete: () => void
 ): Promise<void> {
   for await (const event of options.agent.streamEvents(options.session.sessionId)) {
@@ -73,12 +104,13 @@ async function forwardAgentEvents(
       return;
     }
 
-    await handleAgentEvent(options.channel, event, markTurnComplete);
+    await handleAgentEvent(options.channel, approvals, event, markTurnComplete);
   }
 }
 
 async function handleAgentEvent(
   channel: MessageChannel,
+  approvals: ApprovalRegistry,
   event: AgentEvent,
   markTurnComplete: () => void
 ): Promise<void> {
@@ -93,10 +125,22 @@ async function handleAgentEvent(
     return;
   }
 
+  if (event.type === "approval_required") {
+    await channel.send({
+      text: formatApproval(event),
+      buttons: approvals.register(event),
+    });
+    return;
+  }
+
   if (event.type === "error") {
     markTurnComplete();
     await channel.send({ text: `Codex error: ${event.summary}` });
   }
+}
+
+function formatApproval(event: Extract<AgentEvent, { type: "approval_required" }>): string {
+  return `${event.title}\n${event.summary}`;
 }
 
 function formatTurnComplete(event: Extract<AgentEvent, { type: "turn_complete" }>): string {

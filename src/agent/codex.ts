@@ -38,6 +38,13 @@ type QueueWaiter<T> = {
   reject: (error: Error) => void;
 };
 
+type PendingApprovalResponse = {
+  sessionId: string;
+  turnId: string;
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+};
+
 export class JsonRpcLineParser {
   private buffer = "";
 
@@ -98,7 +105,11 @@ class JsonRpcConnection {
     private readonly stdin: Writable,
     stdout: Readable,
     private readonly onNotification: (method: string, params: unknown) => void,
-    private readonly onServerRequest: (method: string, params: unknown) => Promise<unknown>
+    private readonly onServerRequest: (
+      method: string,
+      params: unknown,
+      requestId: JsonRpcId
+    ) => Promise<unknown>
   ) {
     stdout.on("data", (chunk: Buffer) => {
       this.handleChunk(this.decoder.write(chunk));
@@ -193,7 +204,7 @@ class JsonRpcConnection {
   }
 
   private handleServerRequest(id: JsonRpcId, method: string, params: unknown): void {
-    this.onServerRequest(method, params)
+    this.onServerRequest(method, params, id)
       .then((result) => this.writeMessage({ id, result: result ?? {} }))
       .catch((error: unknown) => {
         const rpcError = error instanceof JsonRpcResponseError ? error : null;
@@ -295,6 +306,8 @@ export class CodexAdapter implements AgentAdapter {
   private readonly onWarning: (message: string) => void;
   private readonly events = new AsyncEventQueue<AgentEvent>();
   private readonly messageBuffers = new Map<string, string>();
+  private readonly pendingApprovals = new Map<string, PendingApprovalResponse>();
+  private readonly requestApprovals = new Map<string, string>();
   private process: CodexProcess | null = null;
   private connection: JsonRpcConnection | null = null;
   private initialized = false;
@@ -342,11 +355,25 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async answerApproval(
-    _sessionId: string,
-    _approvalId: string,
-    _decision: ApprovalDecision
+    sessionId: string,
+    approvalId: string,
+    decision: ApprovalDecision
   ): Promise<void> {
-    throw new Error("Codex approval responses are not implemented until checkpoint 4");
+    if (decision !== "accept" && decision !== "decline") {
+      throw new Error("Only accept and decline approval decisions are implemented in checkpoint 4");
+    }
+
+    const pending = this.pendingApprovals.get(approvalId);
+    if (pending === undefined) {
+      throw new Error("Approval is no longer pending");
+    }
+
+    if (pending.sessionId !== sessionId) {
+      throw new Error("Approval does not belong to the active session");
+    }
+
+    this.pendingApprovals.delete(approvalId);
+    pending.resolve({ decision });
   }
 
   async interrupt(sessionId: string, turnId: string): Promise<void> {
@@ -408,7 +435,7 @@ export class CodexAdapter implements AgentAdapter {
       this.process.stdin,
       this.process.stdout,
       (method, params) => this.handleNotification(method, params),
-      (method) => this.handleServerRequest(method)
+      (method, params, requestId) => this.handleServerRequest(method, params, requestId)
     );
     this.process.stderr.setEncoding("utf8");
     this.process.stderr.on("data", (chunk: string) => {
@@ -495,16 +522,69 @@ export class CodexAdapter implements AgentAdapter {
         summary: params.error.message,
         ...(params.error.additionalDetails === null ? {} : { detailsRef: params.error.additionalDetails }),
       });
+      return;
+    }
+
+    if (method === "serverRequest/resolved" && isServerRequestResolved(params)) {
+      const approvalId = this.requestApprovals.get(String(params.requestId));
+      if (approvalId !== undefined) {
+        this.requestApprovals.delete(String(params.requestId));
+        this.pendingApprovals.delete(approvalId);
+      }
     }
   }
 
-  private handleServerRequest(method: string): Promise<unknown> {
+  private handleServerRequest(
+    method: string,
+    params: unknown,
+    requestId: JsonRpcId
+  ): Promise<unknown> {
+    if (method === "item/commandExecution/requestApproval" && isCommandApprovalRequest(params)) {
+      return this.handleCommandApproval(params, requestId);
+    }
+
     return Promise.reject(
-      new JsonRpcResponseError(-32601, `Server request ${method} is not implemented in checkpoint 1`)
+      new JsonRpcResponseError(-32601, `Server request ${method} is not implemented`)
     );
   }
 
+  private handleCommandApproval(
+    params: CommandApprovalRequest,
+    requestId: JsonRpcId
+  ): Promise<unknown> {
+    const approvalId = params.approvalId ?? params.itemId;
+    const command = params.command ?? "(command unavailable)";
+    const cwd = typeof params.cwd === "string" ? params.cwd : undefined;
+    const summary = cwd === undefined ? command : `${command}\n\ncwd: ${cwd}`;
+
+    this.requestApprovals.set(String(requestId), approvalId);
+    this.events.push({
+      type: "approval_required",
+      sessionId: params.threadId,
+      turnId: params.turnId,
+      approvalId,
+      kind: "shell",
+      title: "Codex needs to run:",
+      summary,
+      availableDecisions: ["accept", "decline"],
+    });
+
+    return new Promise((resolve, reject) => {
+      this.pendingApprovals.set(approvalId, {
+        sessionId: params.threadId,
+        turnId: params.turnId,
+        resolve,
+        reject,
+      });
+    });
+  }
+
   private handleProcessFailure(error: Error): void {
+    for (const pending of this.pendingApprovals.values()) {
+      pending.reject(error);
+    }
+    this.pendingApprovals.clear();
+    this.requestApprovals.clear();
     this.connection?.closeWithError(error);
     this.events.fail(error);
   }
@@ -595,6 +675,32 @@ function isErrorNotification(value: unknown): value is {
     typeof value.error.message === "string" &&
     (typeof value.error.additionalDetails === "string" || value.error.additionalDetails === null)
   );
+}
+
+type CommandApprovalRequest = {
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  approvalId?: string | null;
+  command?: string | null;
+  cwd?: unknown;
+};
+
+function isCommandApprovalRequest(value: unknown): value is CommandApprovalRequest {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    typeof value.turnId === "string" &&
+    typeof value.itemId === "string" &&
+    (value.approvalId === undefined ||
+      value.approvalId === null ||
+      typeof value.approvalId === "string") &&
+    (value.command === undefined || value.command === null || typeof value.command === "string")
+  );
+}
+
+function isServerRequestResolved(value: unknown): value is { requestId: JsonRpcId } {
+  return isRecord(value) && getJsonRpcId({ id: value.requestId }) !== null;
 }
 
 function getJsonRpcId(message: JsonObject): JsonRpcId | null {

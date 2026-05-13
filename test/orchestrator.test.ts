@@ -43,10 +43,40 @@ describe("runOrchestrator", () => {
 
     expect(channel.sentMessages).toEqual(["README.md\nsrc/cli.ts", "Codex finished."]);
   });
+
+  it("sends approval buttons and forwards button decisions to Codex", async () => {
+    const channel = new FakeChannel([{ type: "button_press", callbackId: "apgr:1", fromUserId: "u1" }]);
+    const agent = new FakeAgent([
+      {
+        type: "approval_required",
+        sessionId: "thr_123",
+        turnId: "turn_1",
+        approvalId: "approval_1",
+        kind: "shell",
+        title: "Codex needs to run:",
+        summary: "npm test",
+        availableDecisions: ["accept", "decline"],
+      },
+    ]);
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(channel.sentMessages).toEqual(["Codex needs to run:\nnpm test", "Approved."]);
+    expect(channel.sentButtons).toEqual([
+      [
+        { label: "Approve", callbackId: "apgr:1" },
+        { label: "Deny", callbackId: "apgr:2" },
+      ],
+    ]);
+    expect(agent.approvals).toEqual([
+      { sessionId: "thr_123", approvalId: "approval_1", decision: "accept" },
+    ]);
+  });
 });
 
 class FakeChannel implements MessageChannel {
   readonly sentMessages: string[] = [];
+  readonly sentButtons: Array<NonNullable<ChannelMessage["buttons"]>> = [];
 
   constructor(private readonly channelEvents: ChannelEvent[]) {}
 
@@ -60,15 +90,21 @@ class FakeChannel implements MessageChannel {
 
   async send(msg: ChannelMessage): Promise<void> {
     this.sentMessages.push(msg.text);
+    if (msg.buttons !== undefined) {
+      this.sentButtons.push(msg.buttons);
+    }
   }
 
   async *events(): AsyncIterable<ChannelEvent> {
+    await Promise.resolve();
     yield* this.channelEvents;
   }
 }
 
 class FakeAgent implements AgentAdapter {
   readonly sentMessages: Array<{ sessionId: string; text: string }> = [];
+  readonly approvals: Array<{ sessionId: string; approvalId: string; decision: ApprovalDecision }> =
+    [];
 
   constructor(private readonly agentEvents: AgentEvent[]) {}
 
@@ -89,11 +125,11 @@ class FakeAgent implements AgentAdapter {
   }
 
   async answerApproval(
-    _sessionId: string,
-    _approvalId: string,
-    _decision: ApprovalDecision
+    sessionId: string,
+    approvalId: string,
+    decision: ApprovalDecision
   ): Promise<void> {
-    return Promise.resolve();
+    this.approvals.push({ sessionId, approvalId, decision });
   }
 
   async interrupt(): Promise<void> {

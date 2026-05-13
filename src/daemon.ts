@@ -60,8 +60,8 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
 
   const session = await agent.startSession({
     cwd,
-    approvalPolicy: "never",
-    sandbox: "read-only",
+    approvalPolicy: "untrusted",
+    sandbox: "workspace-write",
   });
   const startedAt = new Date().toISOString();
 

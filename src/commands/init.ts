@@ -126,7 +126,9 @@ async function waitForPairingMessage(
       offset = nextOffset;
     }
 
-    const update = updates[0];
+    const update = updates.find(
+      (candidate): candidate is TelegramMessageUpdate => candidate.type === "message"
+    );
     if (update !== undefined) {
       return update;
     }

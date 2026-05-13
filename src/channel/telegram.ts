@@ -13,11 +13,23 @@ export type TelegramUser = {
 };
 
 export type TelegramMessageUpdate = {
+  type: "message";
   updateId: number;
   chatId: number;
   from?: TelegramUser;
   text?: string;
 };
+
+type TelegramCallbackUpdate = {
+  type: "callback_query";
+  updateId: number;
+  callbackQueryId: string;
+  callbackId: string;
+  from: TelegramUser;
+  chatId?: number;
+};
+
+export type TelegramUpdate = TelegramMessageUpdate | TelegramCallbackUpdate;
 
 type TelegramChannelOptions = {
   botToken: string;
@@ -51,7 +63,7 @@ export class TelegramChannel implements MessageChannel {
     }
 
     for (const chunk of splitTelegramText(msg.text)) {
-      await this.sendMessage(this.chatId, chunk);
+      await this.sendMessage(this.chatId, chunk, msg.buttons);
     }
   }
 
@@ -73,15 +85,27 @@ export class TelegramChannel implements MessageChannel {
       }
 
       for (const update of updates) {
-        if (update.chatId !== this.chatId || update.text === undefined) {
+        if (update.type === "message" && update.chatId !== this.chatId) {
           continue;
         }
 
-        yield {
-          type: "message",
-          text: update.text,
-          fromUserId: String(update.from?.id ?? update.chatId),
-        };
+        if (update.type === "message" && update.text !== undefined) {
+          yield {
+            type: "message",
+            text: update.text,
+            fromUserId: String(update.from?.id ?? update.chatId),
+          };
+          continue;
+        }
+
+        if (update.type === "callback_query" && update.chatId === this.chatId) {
+          await this.answerCallbackQuery(update.callbackQueryId);
+          yield {
+            type: "button_press",
+            callbackId: update.callbackId,
+            fromUserId: String(update.from.id),
+          };
+        }
       }
     }
   }
@@ -93,20 +117,34 @@ export class TelegramChannel implements MessageChannel {
   async getUpdates(options: {
     offset?: number;
     timeoutSeconds: number;
-  }): Promise<TelegramMessageUpdate[]> {
+  }): Promise<TelegramUpdate[]> {
     const result = await this.call<unknown[]>("getUpdates", {
       ...(options.offset === undefined ? {} : { offset: options.offset }),
       timeout: options.timeoutSeconds,
-      allowed_updates: ["message"],
+      allowed_updates: ["message", "callback_query"],
     });
 
-    return result.flatMap(parseMessageUpdate);
+    return result.flatMap(parseTelegramUpdate);
   }
 
-  async sendMessage(chatId: number, text: string): Promise<void> {
+  async sendMessage(
+    chatId: number,
+    text: string,
+    buttons?: Array<{ label: string; callbackId: string }>
+  ): Promise<void> {
     await this.call("sendMessage", {
       chat_id: chatId,
       text,
+      ...(buttons === undefined || buttons.length === 0
+        ? {}
+        : { reply_markup: toInlineKeyboard(buttons) }),
+    });
+  }
+
+  async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+    await this.call("answerCallbackQuery", {
+      callback_query_id: callbackQueryId,
+      ...(text === undefined ? {} : { text }),
     });
   }
 
@@ -132,7 +170,7 @@ export class TelegramChannel implements MessageChannel {
   }
 }
 
-export function nextTelegramOffset(updates: TelegramMessageUpdate[]): number | undefined {
+export function nextTelegramOffset(updates: TelegramUpdate[]): number | undefined {
   const latest = updates.reduce<number | null>(
     (current, update) => (current === null || update.updateId > current ? update.updateId : current),
     null
@@ -166,24 +204,93 @@ export function describeTelegramUser(user: TelegramUser | undefined, chatId: num
   return `chat_id ${chatId}`;
 }
 
-function parseMessageUpdate(update: unknown): TelegramMessageUpdate[] {
-  if (!isRecord(update) || typeof update.update_id !== "number" || !isRecord(update.message)) {
+function toInlineKeyboard(buttons: Array<{ label: string; callbackId: string }>): {
+  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+} {
+  return {
+    inline_keyboard: [
+      buttons.map((button) => {
+        if (Buffer.byteLength(button.callbackId, "utf8") > 64) {
+          throw new Error("Telegram callback_data must be 64 bytes or less");
+        }
+
+        return {
+          text: button.label,
+          callback_data: button.callbackId,
+        };
+      }),
+    ],
+  };
+}
+
+function parseTelegramUpdate(update: unknown): TelegramUpdate[] {
+  if (!isRecord(update) || typeof update.update_id !== "number") {
     return [];
   }
 
-  const message = update.message;
+  if (isRecord(update.message)) {
+    return parseMessageUpdate(update.update_id, update.message);
+  }
+
+  if (isRecord(update.callback_query)) {
+    return parseCallbackUpdate(update.update_id, update.callback_query);
+  }
+
+  return [];
+}
+
+function parseMessageUpdate(updateId: number, message: Record<string, unknown>): TelegramMessageUpdate[] {
   if (!isRecord(message.chat) || typeof message.chat.id !== "number") {
     return [];
   }
 
   return [
     {
-      updateId: update.update_id,
+      type: "message",
+      updateId,
       chatId: message.chat.id,
       ...(isTelegramUser(message.from) ? { from: message.from } : {}),
       ...(typeof message.text === "string" ? { text: message.text } : {}),
     },
   ];
+}
+
+function parseCallbackUpdate(
+  updateId: number,
+  callbackQuery: Record<string, unknown>
+): TelegramCallbackUpdate[] {
+  if (
+    typeof callbackQuery.id !== "string" ||
+    !isTelegramUser(callbackQuery.from) ||
+    typeof callbackQuery.data !== "string"
+  ) {
+    return [];
+  }
+
+  const chatId = callbackQueryMessageChatId(callbackQuery);
+
+  return [
+    {
+      type: "callback_query",
+      updateId,
+      callbackQueryId: callbackQuery.id,
+      callbackId: callbackQuery.data,
+      from: callbackQuery.from,
+      ...(chatId === undefined ? {} : { chatId }),
+    },
+  ];
+}
+
+function callbackQueryMessageChatId(callbackQuery: Record<string, unknown>): number | undefined {
+  if (
+    isRecord(callbackQuery.message) &&
+    isRecord(callbackQuery.message.chat) &&
+    typeof callbackQuery.message.chat.id === "number"
+  ) {
+    return callbackQuery.message.chat.id;
+  }
+
+  return undefined;
 }
 
 function isTelegramResponse(value: unknown): value is
