@@ -58,11 +58,7 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
   const stdout = options.stdout ?? process.stdout;
   const abortController = new AbortController();
 
-  const session = await agent.startSession({
-    cwd,
-    approvalPolicy: "untrusted",
-    sandbox: "workspace-write",
-  });
+  const session = await agent.startSession({ cwd });
   const startedAt = new Date().toISOString();
 
   await writeLastThreadState(

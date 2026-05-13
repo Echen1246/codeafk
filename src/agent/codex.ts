@@ -323,10 +323,10 @@ export class CodexAdapter implements AgentAdapter {
   async startSession(options: StartSessionOptions): Promise<AgentSession> {
     await this.ensureInitialized(options.cwd);
     const result = await this.request("thread/start", {
-      model: options.model ?? null,
       cwd: options.cwd,
-      approvalPolicy: options.approvalPolicy ?? "never",
-      sandbox: options.sandbox ?? "read-only",
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.approvalPolicy === undefined ? {} : { approvalPolicy: options.approvalPolicy }),
+      ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
       serviceName: CLIENT_NAME,
     });
 
