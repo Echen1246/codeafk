@@ -216,5 +216,3 @@ Dead-code check:
 ```bash
 XDG_CACHE_HOME=/private/tmp/afk-cache pnpm dlx knip
 ```
-
-See [SPEC.md](./SPEC.md) for the longer product document.

@@ -30,8 +30,7 @@
     "dist/sleep.js",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md",
-    "SPEC.md"
+    "CHANGELOG.md"
   ],
   "keywords": [
     "codex",
