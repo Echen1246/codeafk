@@ -294,7 +294,7 @@ Now send any message to your bot from your phone, then press Enter.
 
 > (waits)
 
-Detected message from @ayocheddie (chat_id 12345678).
+Detected message from @afkuser (chat_id 12345678).
 Pair this Telegram account with afk? [y/n]: y
 
 Paired successfully.
@@ -314,7 +314,7 @@ afk is running.
 Workspace:  ~/projects/myapp
 Agent:      Codex
 Thread:     thr_abc123 (new)
-Channel:    Telegram (@ayocheddie)
+Channel:    Telegram (@afkuser)
 Sleep:      active (caffeinate -dimsu)
 
 Away Mode is ON.
@@ -416,7 +416,7 @@ Deliverables:
 - HTML and raw `.diff` attachments on completion
 - Basic error handling and "Codex crashed" reporting
 
-Success criterion: Eddie can leave for the gym, send a real prompt from his phone, get a real response, approve a real command, and come back to a usable diff he can review and resume in `codex resume`.
+Success criterion: the maintainer can leave for the gym, send a real prompt from their phone, get a real response, approve a real command, and come back to a usable diff they can review and resume in `codex resume`.
 
 ### v0.5 — Polish + Discord
 
@@ -506,7 +506,7 @@ If we later need any of these, they belong in a separate product, not in `afk`.
 
 ## Success criteria
 
-We will consider v0 a success if **one real person** — Eddie — uses AFK to drive a real Codex session from their phone during one real workout, returns to their laptop, runs `codex resume`, and finds the work was actually useful.
+We will consider v0 a success if **one real maintainer** uses AFK to drive a real Codex session from their phone during one real workout, returns to their laptop, runs `codex resume`, and finds the work was actually useful.
 
 We will consider the project a success if 100 GitHub stars and 10 outside contributors arrive within 90 days of public release. Beyond that is gravy.
 

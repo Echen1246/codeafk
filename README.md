@@ -1,39 +1,39 @@
 # AFK
 
-AFK lets you leave Codex running on your laptop and keep working from Telegram. Send prompts from your phone, approve shell commands with buttons, get Codex's replies, review the final HTML/raw diff, then resume the same Codex thread when you are back at your desk.
+AFK lets you keep working with Codex from your phone.
 
-This is experimental. The Codex app-server protocol is still moving, and v0 is intentionally small: Codex only, Telegram only, no hosted relay, no web dashboard, no accounts.
+Start `afk` on your laptop, leave it running, and send prompts from Telegram while you are away. AFK forwards your messages to Codex, sends Codex replies back to Telegram, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
 
-## What Works In v0
+It is small on purpose: Codex, Telegram, and your laptop. No hosted relay, dashboard, accounts, analytics, or cloud sync.
 
-- `afk init` pairs a Telegram bot with your laptop.
-- `afk` starts Away Mode, keeps your Mac awake, and lets you pick a recent project/session from Telegram.
-- `afk start` is the explicit form of the same start command.
-- Telegram messages become Codex prompts.
-- Telegram messages sent while Codex is working steer the active Codex turn.
-- Resumed sessions send a short recent-context catch-up into Telegram.
-- Codex replies are sent back to Telegram.
-- Shell command approvals show up as inline Approve and Deny buttons.
-- Completed turns send a changed-file summary, phone-friendly `.html` diff, and raw `.diff` attachment.
-- `afk status` shows the current thread, daemon state, Codex state, channel state, and uptime.
-- `afk resume` stops Away Mode and prints the `codex resume <thread-id>` command.
+AFK is experimental. It depends on Codex app-server behavior, which may change.
+
+## When To Use It
+
+- You are leaving your desk but want Codex to keep working.
+- You want to answer Codex questions from your phone.
+- You want to approve or deny shell commands while away.
+- You want a quick phone-readable diff before you get back.
+- You want to resume the same Codex thread on your laptop later.
+
+AFK does not run Codex on your phone. Codex still runs on your laptop. Telegram is just the remote control.
 
 ## Requirements
 
-- macOS or another Node-supported desktop environment
 - Node.js 20 or newer
 - Codex installed with `codex app-server` support
 - A Telegram account
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 
-For local development, this repo uses pnpm 10.
+macOS is the best-supported platform in v0 because AFK runs `caffeinate -dimsu` while Away Mode is active. Other desktop platforms can run the CLI, but v0 does not keep them awake automatically.
 
 ## Install
 
-Once v0.1.0 is published:
+From npm:
 
 ```bash
 npm install -g codeafk
+afk --help
 ```
 
 From a local checkout:
@@ -42,50 +42,38 @@ From a local checkout:
 pnpm install
 pnpm build
 npm link
-```
-
-Confirm the CLI is available:
-
-```bash
 afk --help
 ```
 
-## Quick Start
+## First-Time Setup
 
-1. Create a Telegram bot with [@BotFather](https://t.me/BotFather), then copy the bot token.
-2. Pair AFK:
+1. Open Telegram and message [@BotFather](https://t.me/BotFather).
+2. Create a bot with `/newbot`.
+3. Copy the bot token.
+4. Run:
 
    ```bash
    afk init
    ```
 
-3. Paste the token when prompted.
-4. Send any message to your bot from Telegram.
-5. Confirm the pairing prompt in your terminal.
-6. Start Away Mode from the repo you want Codex to work in:
+5. Paste the bot token.
+6. Send any Telegram message to your new bot.
+7. Confirm the pairing in your terminal.
 
-   ```bash
-   cd /path/to/your/project
-   afk
-   ```
+AFK saves the token on your laptop at `~/.config/afk/config.toml` with owner-only file permissions.
 
-7. In Telegram, send `/sessions`.
-8. Choose a project.
-9. Choose a recent Codex session, or reply `new` to start a new one.
-10. Text your bot from your phone.
-11. When you are back at your desk, press `Ctrl+C` in the terminal running `afk`. AFK prints the Codex command for continuing locally:
+## Daily Workflow
 
-   ```bash
-   codex resume <thread-id>
-   ```
+Start AFK from the repo you want Codex to work in:
 
-   If you stopped AFK from another terminal, run `afk resume` there to print the same command.
+```bash
+cd /path/to/your/project
+afk
+```
 
-   If an already-open Codex window still looks stale, reopen or resume the thread. Codex may not live-refresh updates written by AFK while Away Mode was active.
+Keep that terminal open. It is the AFK process.
 
-## Telegram Flow
-
-The v0 UI is plain Telegram messages and inline buttons:
+In Telegram:
 
 ```text
 You:
@@ -94,111 +82,127 @@ You:
 AFK:
 Recent projects:
 
-[1] codeafk - /Users/eddie/Documents/codeafk (6 sessions)
-[2] myapp - /Users/eddie/Documents/myapp (3 sessions)
+[1] myapp - /Users/you/projects/myapp (6 sessions)
+[2] docs-site - /Users/you/projects/docs-site (3 sessions)
 
 Reply with a number.
+```
 
-You:
-2
+Choose a project, then choose a recent Codex session or reply `new`.
 
+```text
 AFK:
 Recent sessions in myapp:
 
 [1] today, 14m - "fix the failing auth callback test" (47 msg)
 [2] today, 2h - "add tests for the expired-state case" (23 msg)
-[3] yesterday - "refactor the OAuth state validation" (89 msg)
+[3] yesterday - "refactor OAuth state validation" (89 msg)
 
 Reply with a number, or "new" for a new session.
+```
 
-You:
-1
+Now text the bot like you would text Codex:
 
-AFK:
-Resumed thr_ghi789. What would you like to do?
-
+```text
 You:
 look at the failing test and propose a fix
 
-Codex:
-I found the failing assertion. The parser returns an empty path for /dev/null...
+AFK:
+Sent to Codex.
 
+Codex:
+I found the failing assertion...
+```
+
+If Codex asks to run a command, AFK shows Telegram buttons:
+
+```text
 AFK:
 Codex needs to run:
 pnpm test
 
 [Approve] [Deny]
+```
 
+When Codex finishes, AFK sends a short summary and two diff attachments:
+
+```text
 AFK:
 Codex finished.
 Changed: README.md (+1 -0)
 
-Attachment:
+Attachments:
 turn_abc123.html
 turn_abc123.diff
 ```
 
-AFK sends both a phone-friendly `.html` diff and the raw `.diff`. In the raw diff, a line starting with `+` was added, a line starting with `-` was removed, and unchanged lines are shown for context.
+The `.html` file is easier to read on a phone. The `.diff` file is the raw unified diff.
+
+## Coming Back To Your Laptop
+
+Press `Ctrl+C` in the terminal running `afk`.
+
+AFK stops and prints:
+
+```bash
+codex resume <thread-id>
+```
+
+Run that command to continue the same Codex thread locally.
+
+If you stopped AFK from another terminal, run this to print the same resume command:
+
+```bash
+afk resume
+```
+
+If an already-open Codex window looks stale, reopen or resume the thread. Codex may not live-refresh updates that happened while AFK was driving the session.
 
 ## Commands
 
 ```text
 afk          Start Away Mode in the current workspace
 afk init     Pair AFK with Telegram
-afk start    Start Away Mode and choose a project/session from Telegram
-afk stop     Stop Away Mode
-afk resume   Release the session and print the Codex resume command
-afk status   Show AFK status
+afk start    Same as afk
+afk stop     Stop Away Mode from another terminal
+afk resume   Stop Away Mode and print the Codex resume command
+afk status   Show current AFK status
 ```
 
-## Files On Disk
+## What AFK Stores
 
-AFK stores only local config and local state:
+AFK stores local config and local state only:
 
 - Config: `~/.config/afk/config.toml`
 - Last thread state: `~/.local/state/afk/last-thread.json`
 - Diff snapshots: `~/.local/state/afk/diffs/<turnId>.diff`
 
-During the rename from `apgr`, AFK also reads existing config/state from the old `~/.config/apgr` and `~/.local/state/apgr` paths so existing pairings keep working.
+Your Telegram bot token stays on your machine. AFK does not send code, repo contents, diffs, logs, or telemetry anywhere except the Telegram chat you paired.
 
-Config files are written with owner-only permissions. Bot tokens stay on your machine.
+During the rename from `apgr`, AFK also reads old config/state from `~/.config/apgr` and `~/.local/state/apgr` so existing local pairings keep working.
 
-## Security Model
+## Troubleshooting
 
-AFK does not run a hosted service. Your laptop talks directly to Telegram's Bot API and the local Codex app-server process.
+If `afk` cannot find Codex, confirm `codex` works in the same terminal:
 
-No code, repo contents, diffs, logs, or telemetry are sent anywhere except the messaging channel you configured. For v0, that means Telegram. The project deliberately avoids a web UI, cloud relay, account system, analytics, and third-party crash reporting.
-
-Shell approvals are surfaced to Telegram because Codex asks for them. AFK does not add a separate file-change approval layer in v0.
-
-## Architecture
-
-```text
-Telegram bot API
-      ^
-      |
-TelegramChannel
-      ^
-      |
-Orchestrator
-      |
-      v
-CodexAdapter
-      |
-      v
-codex app-server
+```bash
+codex --version
 ```
 
-The adapter turns Codex app-server events into internal `AgentEvent`s. The orchestrator decides how to render those events into Telegram messages, buttons, and file attachments.
+If Telegram stops responding, check that your laptop is awake, online, and still running `afk`.
+
+If approval buttons do not appear, Codex may already be allowed to run that command by your local Codex settings. AFK only shows buttons when Codex asks for approval.
+
+If the phone session does not appear in an already-open Codex window, run the printed `codex resume <thread-id>` command.
 
 ## Development
 
 ```bash
 pnpm install
-pnpm build
 pnpm typecheck
 pnpm test
-XDG_CACHE_HOME=/private/tmp/afk-cache pnpm dlx knip
+pnpm build
+pnpm pack:dry-run
 ```
 
 Local Codex smoke test:
@@ -207,18 +211,10 @@ Local Codex smoke test:
 pnpm tsx src/dev/local-loop.ts "list files in this directory"
 ```
 
-Package dry run:
+Dead-code check:
 
 ```bash
-pnpm pack:dry-run
+XDG_CACHE_HOME=/private/tmp/afk-cache pnpm dlx knip
 ```
 
-## Roadmap
-
-- v0: Codex + Telegram, shell approvals, HTML and raw `.diff` attachments.
-- v0.5: Discord, file-change approval flow, richer diff rendering.
-- v1: VS Code extension that also works in Cursor.
-- v2: More CLI coding agents.
-- v3: Cursor SDK adapter when the right integration surface exists.
-
-See [SPEC.md](./SPEC.md) for the full product document.
+See [SPEC.md](./SPEC.md) for the longer product document.

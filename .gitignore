@@ -2,3 +2,9 @@ dist/
 node_modules/
 .pnpm-store/
 .DS_Store
+.env
+.env.*
+.npmrc
+*.log
+*.tgz
+coverage/

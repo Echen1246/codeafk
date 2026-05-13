@@ -25,7 +25,7 @@ describe("TelegramChannel", () => {
               update_id: 42,
               message: {
                 chat: { id: 123 },
-                from: { id: 456, username: "eddie" },
+                from: { id: 456, username: "user" },
                 text: "pair me",
               },
             },
@@ -39,7 +39,7 @@ describe("TelegramChannel", () => {
         updateId: 42,
         type: "message",
         chatId: 123,
-        from: { id: 456, username: "eddie" },
+        from: { id: 456, username: "user" },
         text: "pair me",
       },
     ]);
@@ -298,7 +298,7 @@ describe("Telegram helpers", () => {
   });
 
   it("prefers usernames in user descriptions", () => {
-    expect(describeTelegramUser({ id: 1, username: "ayocheddie" }, 123)).toBe("@ayocheddie");
+    expect(describeTelegramUser({ id: 1, username: "afkuser" }, 123)).toBe("@afkuser");
   });
 
   it("splits long Telegram messages with headroom under the API limit", () => {

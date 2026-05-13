@@ -1,10 +1,10 @@
-type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
-
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "./types.js";
 
 const TELEGRAM_MESSAGE_LIMIT = 4000;
 const TELEGRAM_POLL_TIMEOUT_SECONDS = 30;
 const TELEGRAM_RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000] as const;
+
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 type TelegramConnectionStatus = "connected" | "disconnected";
 

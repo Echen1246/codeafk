@@ -21,7 +21,7 @@ describe("selectSessionFromChannel", () => {
     const agent = new FakeAgent([
       {
         threadId: "thr_recent",
-        cwd: "/Users/eddie/Documents/myapp",
+        cwd: "/Users/you/projects/myapp",
         title: "fix the failing auth callback test",
         preview: "fix the failing auth callback test",
         createdAt: 1778650000,
@@ -30,7 +30,7 @@ describe("selectSessionFromChannel", () => {
       },
       {
         threadId: "thr_other",
-        cwd: "/Users/eddie/Documents/other",
+        cwd: "/Users/you/projects/other",
         title: "other work",
         preview: "other work",
         createdAt: 1778640000,
@@ -48,17 +48,17 @@ describe("selectSessionFromChannel", () => {
       agent,
       channel,
       events,
-      defaultCwd: "/Users/eddie/Documents/myapp",
+      defaultCwd: "/Users/you/projects/myapp",
       now: new Date(1778659840000),
     });
 
     expect(selection).toEqual({
-      cwd: "/Users/eddie/Documents/myapp",
+      cwd: "/Users/you/projects/myapp",
       threadId: "thr_recent",
     });
     expect(agent.listCalls).toEqual([
       { limit: 50 },
-      { cwd: "/Users/eddie/Documents/myapp", limit: 8, includeMessageCounts: true },
+      { cwd: "/Users/you/projects/myapp", limit: 8, includeMessageCounts: true },
     ]);
     expect(channel.sentMessages.at(-1)).toContain("[1] today, 14m");
   });
@@ -76,10 +76,10 @@ describe("selectSessionFromChannel", () => {
       agent,
       channel,
       events,
-      defaultCwd: "/Users/eddie/Documents/newapp",
+      defaultCwd: "/Users/you/projects/newapp",
     });
 
-    expect(selection).toEqual({ cwd: "/Users/eddie/Documents/newapp" });
+    expect(selection).toEqual({ cwd: "/Users/you/projects/newapp" });
     expect(channel.sentMessages.at(-1)).toContain("No recent sessions in newapp.");
   });
 });
@@ -91,18 +91,18 @@ describe("session picker formatting", () => {
         [
           sessionSummary({
             threadId: "thr_1",
-            cwd: "/Users/eddie/Documents/other",
+            cwd: "/Users/you/projects/other",
             updatedAt: 20,
           }),
           sessionSummary({
             threadId: "thr_2",
-            cwd: "/Users/eddie/Documents/current",
+            cwd: "/Users/you/projects/current",
             updatedAt: 10,
           }),
         ],
-        "/Users/eddie/Documents/current"
+        "/Users/you/projects/current"
       ).map((project) => project.cwd)
-    ).toEqual(["/Users/eddie/Documents/current", "/Users/eddie/Documents/other"]);
+    ).toEqual(["/Users/you/projects/current", "/Users/you/projects/other"]);
   });
 
   it("formats session recency for mobile scanning", () => {
@@ -120,7 +120,7 @@ describe("session picker formatting", () => {
     expect(
       formatSessionList(
         {
-          cwd: "/Users/eddie/Documents/myapp",
+          cwd: "/Users/you/projects/myapp",
           name: "myapp",
           sessionCount: 1,
           updatedAt: 1778659000,
@@ -141,7 +141,7 @@ describe("session picker formatting", () => {
 function sessionSummary(overrides: Partial<AgentSessionSummary>): AgentSessionSummary {
   return {
     threadId: "thr_123",
-    cwd: "/Users/eddie/Documents/myapp",
+    cwd: "/Users/you/projects/myapp",
     title: "work on myapp",
     preview: "work on myapp",
     createdAt: 1778650000,
@@ -235,6 +235,6 @@ class FakeAgent implements AgentAdapter {
 const testSession: AgentSession = {
   sessionId: "thr_recent",
   threadId: "thr_recent",
-  cwd: "/Users/eddie/Documents/myapp",
+  cwd: "/Users/you/projects/myapp",
   model: "gpt-5.4",
 };

@@ -99,7 +99,7 @@ Do not create files outside this layout without asking. No `src/utils/`, no `src
 
 ## Checkpoints
 
-Each checkpoint is an end-to-end demoable state. Do not move on until the previous checkpoint's demo works on Eddie's laptop.
+Each checkpoint is an end-to-end demoable state. Do not move on until the previous checkpoint's demo works on the maintainer's laptop.
 
 ### Checkpoint 0: Repo skeleton compiles and runs
 
@@ -169,7 +169,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 3: `afk` end-to-end happy path
 
-**Demo:** Eddie runs `afk` in a real repo. The daemon starts Codex, starts Telegram polling, and on macOS starts `caffeinate -dimsu` so the laptop stays awake. From his phone via Telegram, he sends "list the files in src/". His bot replies "Sent to Codex." A few seconds later, the bot sends the file list as a Telegram message. He sends another prompt. Same thing. He presses Ctrl+C, and the daemon shuts down cleanly, including the caffeinate child process. AFK prints `codex resume thr_xyz`; he runs that in his terminal, and Codex picks up the conversation with full history. If he stopped AFK from another terminal, `afk resume` prints the same command.
+**Demo:** the maintainer runs `afk` in a real repo. The daemon starts Codex, starts Telegram polling, and on macOS starts `caffeinate -dimsu` so the laptop stays awake. From their phone via Telegram, they send "list the files in src/". The bot replies "Sent to Codex." A few seconds later, the bot sends the file list as a Telegram message. They send another prompt. Same thing. They press Ctrl+C, and the daemon shuts down cleanly, including the caffeinate child process. AFK prints `codex resume thr_xyz`; they run that in their terminal, and Codex picks up the conversation with full history. If they stopped AFK from another terminal, `afk resume` prints the same command.
 
 **Scope:**
 - `src/daemon.ts` — orchestrates CodexAdapter + TelegramChannel
@@ -193,7 +193,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 4: Shell command approval
 
-**Demo:** Eddie sends "run the tests" from his phone. Codex requests approval to execute `npm test`. The daemon sends a Telegram message with the command text and inline buttons "Approve" and "Deny". Eddie taps Approve. Codex runs the command. The output is summarized and sent back when the turn completes. Tapping Deny does the opposite path and Codex acknowledges the denial.
+**Demo:** the maintainer sends "run the tests" from their phone. Codex requests approval to execute `npm test`. The daemon sends a Telegram message with the command text and inline buttons "Approve" and "Deny". The maintainer taps Approve. Codex runs the command. The output is summarized and sent back when the turn completes. Tapping Deny does the opposite path and Codex acknowledges the denial.
 
 **Scope:**
 - Extend `CodexAdapter` to handle `item/commandExecution/requestApproval` → `approval_required` AgentEvent
@@ -212,7 +212,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 5: Diffs on completion
 
-**Demo:** Eddie sends "add a hello world comment to README.md". Codex makes the change, runs to completion, and the daemon sends a Telegram message: "Codex finished ✓ Changed: README.md (+1 -0)" with the diff attached as a `.diff` file. Eddie opens the file in Telegram, sees a clean unified diff, and is happy.
+**Demo:** the maintainer sends "add a hello world comment to README.md". Codex makes the change, runs to completion, and the daemon sends a Telegram message: "Codex finished ✓ Changed: README.md (+1 -0)" with the diff attached as a `.diff` file. The maintainer opens the file in Telegram, sees a clean unified diff, and is happy.
 
 **Scope:**
 - Handle `turn/diff/updated` in CodexAdapter → `diff_updated` AgentEvent
@@ -230,7 +230,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 6: Errors and resilience
 
-**Demo:** Eddie deliberately kills Codex mid-turn. The daemon reports "Codex crashed unexpectedly. Restart with `afk`" to Telegram. He restarts; everything works. He turns off his Wi-Fi for 30 seconds; the daemon recovers when Wi-Fi returns. Telegram messages sent during the outage are received once polling resumes.
+**Demo:** the maintainer deliberately kills Codex mid-turn. The daemon reports "Codex crashed unexpectedly. Restart with `afk`" to Telegram. They restart; everything works. They turn off Wi-Fi for 30 seconds; the daemon recovers when Wi-Fi returns. Telegram messages sent during the outage are received once polling resumes.
 
 **Scope:**
 - Catch Codex subprocess exit; clean up; report to channel
@@ -244,7 +244,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 7: v0 ship
 
-**Demo:** Eddie publishes `codeafk@0.1.0` to npm. He installs it on a fresh machine via `npm install -g codeafk`, runs `afk init`, pairs Telegram, runs `afk` in a real project, and uses it through one real workout session. He returns and runs `codex resume thr_xyz` and continues the work.
+**Demo:** the maintainer publishes `codeafk@0.1.0` to npm. They install it on a fresh machine via `npm install -g codeafk`, run `afk init`, pair Telegram, run `afk` in a real project, and use it through one real workout session. They return and run `codex resume thr_xyz` and continue the work.
 
 **Scope:**
 - README polished with quick-start instructions, screenshots/GIFs of the Telegram flow, and a clear "this is experimental" note
@@ -308,25 +308,25 @@ Don't spend hours guessing. The user is around and prefers a 5-minute conversati
 
 ## v0 done condition
 
-v0 is done when this E2E flow works on Eddie's actual laptop and phone:
+v0 is done when this E2E flow works on the maintainer's actual laptop and phone:
 
-1. He cloned the repo and ran `pnpm install && pnpm build && npm link`
-2. He created a Telegram bot via @BotFather
-3. He ran `afk init`, pasted the token, sent a Telegram message to pair
-4. He `cd`'d into a real project he's working on
-5. He ran `afk`
-6. He left the laptop, went to the gym
-7. From his phone, he sent a real prompt (something like "look at the failing test in X and propose a fix")
-8. He received Codex's response on Telegram
-9. He approved a shell command via inline button
-10. He received the completion summary with diff attachment
-11. He opened the diff in Telegram, reviewed it on his phone
-12. He sent a follow-up prompt ("looks good, also do Y")
-13. He got another response
-14. He came home, ran `afk resume`
-15. He ran the printed `codex resume thr_xyz` in his terminal
+1. They cloned the repo and ran `pnpm install && pnpm build && npm link`
+2. They created a Telegram bot via @BotFather
+3. They ran `afk init`, pasted the token, sent a Telegram message to pair
+4. They `cd`'d into a real project they are working on
+5. They ran `afk`
+6. They left the laptop, went to the gym
+7. From their phone, they sent a real prompt (something like "look at the failing test in X and propose a fix")
+8. They received Codex's response on Telegram
+9. They approved a shell command via inline button
+10. They received the completion summary with diff attachment
+11. They opened the diff in Telegram, reviewed it on their phone
+12. They sent a follow-up prompt ("looks good, also do Y")
+13. They got another response
+14. They came home, ran `afk resume`
+15. They ran the printed `codex resume thr_xyz` in their terminal
 16. The Codex TUI showed the full conversation history from the gym
-17. He continued working in the TUI
+17. They continued working in the TUI
 
 If this works, v0 is done. If it doesn't, find the breakpoint and fix it.
 
