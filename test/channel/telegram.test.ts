@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeTelegramUser,
   nextTelegramOffset,
+  splitTelegramText,
   TelegramChannel,
 } from "../../src/channel/telegram.js";
 
@@ -65,6 +66,44 @@ describe("TelegramChannel", () => {
 
     await expect(channel.getMe()).rejects.toThrow("Telegram getMe failed: Unauthorized");
   });
+
+  it("streams messages from the paired chat only", async () => {
+    const responses = [
+      {
+        ok: true,
+        result: [{ update_id: 1, message: { chat: { id: 999 }, text: "old" } }],
+      },
+      {
+        ok: true,
+        result: [
+          { update_id: 2, message: { chat: { id: 999 }, text: "drop" } },
+          {
+            update_id: 3,
+            message: {
+              chat: { id: 123 },
+              from: { id: 456 },
+              text: "send to codex",
+            },
+          },
+        ],
+      },
+    ];
+    const channel = new TelegramChannel({
+      botToken: "token",
+      chatId: 123,
+      fetch: async () => jsonResponse(responses.shift()),
+    });
+
+    await channel.start();
+    const iterator = channel.events()[Symbol.asyncIterator]();
+    const event = await iterator.next();
+    await channel.stop();
+
+    expect(event).toEqual({
+      done: false,
+      value: { type: "message", text: "send to codex", fromUserId: "456" },
+    });
+  });
 });
 
 describe("Telegram helpers", () => {
@@ -79,6 +118,14 @@ describe("Telegram helpers", () => {
 
   it("prefers usernames in user descriptions", () => {
     expect(describeTelegramUser({ id: 1, username: "ayocheddie" }, 123)).toBe("@ayocheddie");
+  });
+
+  it("splits long Telegram messages with headroom under the API limit", () => {
+    const chunks = splitTelegramText("x".repeat(4001));
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toHaveLength(4000);
+    expect(chunks[1]).toHaveLength(1);
   });
 });
 
