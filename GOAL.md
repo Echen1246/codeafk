@@ -169,7 +169,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 3: `afk` end-to-end happy path
 
-**Demo:** Eddie runs `afk` in a real repo. The daemon starts Codex, starts Telegram polling, and on macOS starts `caffeinate -dimsu` so the laptop stays awake. From his phone via Telegram, he sends "list the files in src/". His bot replies "Sent to Codex." A few seconds later, the bot sends the file list as a Telegram message. He sends another prompt. Same thing. He runs `afk stop` (or Ctrl+C), and the daemon shuts down cleanly, including the caffeinate child process. He runs `afk resume`, sees `codex resume thr_xyz`, runs that in his terminal, and Codex picks up the conversation with full history.
+**Demo:** Eddie runs `afk` in a real repo. The daemon starts Codex, starts Telegram polling, and on macOS starts `caffeinate -dimsu` so the laptop stays awake. From his phone via Telegram, he sends "list the files in src/". His bot replies "Sent to Codex." A few seconds later, the bot sends the file list as a Telegram message. He sends another prompt. Same thing. He presses Ctrl+C, and the daemon shuts down cleanly, including the caffeinate child process. AFK prints `codex resume thr_xyz`; he runs that in his terminal, and Codex picks up the conversation with full history. If he stopped AFK from another terminal, `afk resume` prints the same command.
 
 **Scope:**
 - `src/daemon.ts` — orchestrates CodexAdapter + TelegramChannel

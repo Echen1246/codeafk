@@ -319,7 +319,8 @@ Sleep:      active (caffeinate -dimsu)
 
 Away Mode is ON.
 Text your bot to send prompts to Codex.
-Press Ctrl+C or run `afk stop` to end.
+Keep this terminal open while Away Mode runs.
+Press Ctrl+C here to stop, or run `afk resume` from another terminal to stop and print the Codex resume command.
 ```
 
 Phone receives via Telegram:
@@ -383,7 +384,7 @@ nice, also add a test for the expired-state case
 ### Returning to laptop
 
 ```
-$ afk resume
+^C
 
 Away Mode stopped.
 

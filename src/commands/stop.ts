@@ -21,4 +21,5 @@ export async function stopCommand(): Promise<void> {
 
   process.kill(state.pid, "SIGTERM");
   console.log(`Sent stop signal to afk process ${state.pid}.`);
+  console.log("Run `afk resume` after it stops to print the Codex resume command.");
 }

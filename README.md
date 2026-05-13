@@ -73,12 +73,13 @@ afk --help
 8. Choose a project.
 9. Choose a recent Codex session, or reply `new` to start a new one.
 10. Text your bot from your phone.
-11. When you are back at your desk, stop Away Mode and resume the same Codex thread:
+11. When you are back at your desk, press `Ctrl+C` in the terminal running `afk`. AFK prints the Codex command for continuing locally:
 
    ```bash
-   afk resume
    codex resume <thread-id>
    ```
+
+   If you stopped AFK from another terminal, run `afk resume` there to print the same command.
 
    If an already-open Codex window still looks stale, reopen or resume the thread. Codex may not live-refresh updates written by AFK while Away Mode was active.
 

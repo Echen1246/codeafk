@@ -134,7 +134,11 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     writeLine(stdout, `Sleep:      ${formatSleepPreventionStatus(sleepStatus)}`);
     writeLine(stdout, "\nAway Mode is ON.");
     writeLine(stdout, "Text your bot /sessions to choose a project and Codex session.");
-    writeLine(stdout, "Press Ctrl+C or run `afk stop` to end.");
+    writeLine(stdout, "Keep this terminal open while Away Mode runs.");
+    writeLine(
+      stdout,
+      "Press Ctrl+C here to stop, or run `afk resume` from another terminal to stop and print the Codex resume command."
+    );
 
     await channel.start();
     channelStarted = true;
@@ -226,6 +230,11 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       statePath
     );
     writeLine(stdout, "\nAway Mode stopped.");
+    if (activeThreadId !== null) {
+      writeLine(stdout, "\nTo continue this thread in your terminal:");
+      writeLine(stdout, `  codex resume ${activeThreadId}`);
+      writeLine(stdout, "\nYou can also run `afk resume` later to print this command again.");
+    }
   }
 }
 

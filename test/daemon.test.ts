@@ -129,6 +129,7 @@ describe("daemon state", () => {
   it("updates daemon state when Telegram switches to another session", async () => {
     const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
     const statePath = join(directory, "last-thread.json");
+    const stdout = new FakeOutputWriter();
     const channel = new FakeChannel([
       { type: "message", text: "/sessions", fromUserId: "u1" },
       { type: "message", text: "1", fromUserId: "u1" },
@@ -156,10 +157,12 @@ describe("daemon state", () => {
       cwd: "/workspace",
       statePath,
       sleepPreventer: new FakeSleepPreventer(),
-      stdout: { write: () => undefined },
+      stdout,
     });
 
     expect(channel.sentMessages).toContain("Resumed thr_other. What would you like to do?");
+    expect(stdout.text).toContain("Keep this terminal open while Away Mode runs.");
+    expect(stdout.text).toContain("codex resume thr_other");
     await expect(readLastThreadState(statePath)).resolves.toMatchObject({
       threadId: "thr_other",
       cwd: "/other",
@@ -239,6 +242,14 @@ class FakeSleepPreventer implements SleepPreventer {
 
   async stop(): Promise<void> {
     this.stops += 1;
+  }
+}
+
+class FakeOutputWriter {
+  text = "";
+
+  write(text: string): void {
+    this.text += text;
   }
 }
 
