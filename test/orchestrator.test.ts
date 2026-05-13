@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AgentAdapter, AgentEvent, AgentSession, ApprovalDecision } from "../src/agent/types.js";
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentSession,
+  AgentSessionSummary,
+  ApprovalDecision,
+  ListAgentSessionsOptions,
+  StartSessionOptions,
+} from "../src/agent/types.js";
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "../src/channel/types.js";
 import { runOrchestrator } from "../src/orchestrator.js";
 
@@ -120,6 +128,91 @@ describe("runOrchestrator", () => {
       { sessionId: "thr_123", approvalId: "approval_1", decision: "accept" },
     ]);
   });
+
+  it("switches to a selected Codex session and sends later messages there", async () => {
+    const channel = new FakeChannel([
+      { type: "message", text: "/switch", fromUserId: "u1" },
+      { type: "message", text: "2", fromUserId: "u1" },
+      { type: "message", text: "1", fromUserId: "u1" },
+      { type: "message", text: "continue here", fromUserId: "u1" },
+    ]);
+    const agent = new FakeAgent([], [
+      sessionSummary({
+        threadId: "thr_other",
+        cwd: "/other",
+        title: "work in other project",
+      }),
+      sessionSummary({
+        threadId: "thr_123",
+        cwd: "/workspace",
+        title: "current work",
+      }),
+    ]);
+    const changedSessions: AgentSession[] = [];
+
+    await runOrchestrator({
+      agent,
+      channel,
+      session,
+      onSessionChanged: (nextSession) => {
+        changedSessions.push(nextSession);
+      },
+    });
+
+    expect(agent.resumeCalls).toEqual([{ sessionId: "thr_other", cwd: "/other" }]);
+    expect(changedSessions).toEqual([
+      {
+        sessionId: "thr_other",
+        threadId: "thr_other",
+        cwd: "/other",
+        model: "gpt-5.4",
+      },
+    ]);
+    expect(agent.sentMessages).toEqual([{ sessionId: "thr_other", text: "continue here" }]);
+    expect(channel.sentMessages).toContain("Switching sessions.");
+    expect(channel.sentMessages).toContain("Resumed thr_other. What would you like to do?");
+  });
+
+  it("starts a new Codex session from the switch picker", async () => {
+    const channel = new FakeChannel([
+      { type: "message", text: "/switch", fromUserId: "u1" },
+      { type: "message", text: "1", fromUserId: "u1" },
+      { type: "message", text: "new", fromUserId: "u1" },
+    ]);
+    const agent = new FakeAgent([], [
+      sessionSummary({
+        threadId: "thr_123",
+        cwd: "/workspace",
+        title: "current work",
+      }),
+    ]);
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(agent.startCalls).toEqual([{ cwd: "/workspace" }]);
+    expect(channel.sentMessages).toContain(
+      "Started a new session in workspace. What would you like to do?"
+    );
+  });
+
+  it("does not switch sessions while Codex is still working", async () => {
+    const channel = new FakeChannel([
+      { type: "message", text: "do work", fromUserId: "u1" },
+      { type: "message", text: "/switch", fromUserId: "u1" },
+    ]);
+    const agent = new FakeAgent([]);
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(agent.sentMessages).toEqual([{ sessionId: "thr_123", text: "do work" }]);
+    expect(agent.listCalls).toEqual([]);
+    expect(agent.resumeCalls).toEqual([]);
+    expect(agent.startCalls).toEqual([]);
+    expect(channel.sentMessages).toEqual([
+      "Sent to Codex.",
+      "Codex is still working. Switch sessions after it finishes.",
+    ]);
+  });
 });
 
 class FakeChannel implements MessageChannel {
@@ -157,19 +250,44 @@ class FakeAgent implements AgentAdapter {
   readonly sentMessages: Array<{ sessionId: string; text: string }> = [];
   readonly approvals: Array<{ sessionId: string; approvalId: string; decision: ApprovalDecision }> =
     [];
+  readonly listCalls: ListAgentSessionsOptions[] = [];
+  readonly resumeCalls: Array<{ sessionId: string; cwd: string }> = [];
+  readonly startCalls: Array<{ cwd: string }> = [];
 
-  constructor(private readonly agentEvents: AgentEvent[]) {}
+  constructor(
+    private readonly agentEvents: AgentEvent[],
+    private readonly sessions: AgentSessionSummary[] = []
+  ) {}
 
-  async startSession(): Promise<AgentSession> {
-    return session;
+  async startSession(options: StartSessionOptions): Promise<AgentSession> {
+    this.startCalls.push({ cwd: options.cwd });
+    return {
+      sessionId: `new:${options.cwd}`,
+      threadId: `new:${options.cwd}`,
+      cwd: options.cwd,
+      model: "gpt-5.4",
+    };
   }
 
-  async resumeSession(): Promise<AgentSession> {
-    return session;
+  async resumeSession(sessionId: string, options: { cwd?: string } = {}): Promise<AgentSession> {
+    const cwd =
+      options.cwd ?? this.sessions.find((item) => item.threadId === sessionId)?.cwd ?? session.cwd;
+    this.resumeCalls.push({ sessionId, cwd });
+    return {
+      sessionId,
+      threadId: sessionId,
+      cwd,
+      model: "gpt-5.4",
+    };
   }
 
-  async listSessions(): Promise<[]> {
-    return [];
+  async listSessions(options: ListAgentSessionsOptions = {}): Promise<AgentSessionSummary[]> {
+    this.listCalls.push(options);
+    if (options.cwd === undefined) {
+      return this.sessions;
+    }
+
+    return this.sessions.filter((item) => item.cwd === options.cwd);
   }
 
   async sendMessage(sessionId: string, text: string): Promise<void> {
@@ -195,4 +313,16 @@ class FakeAgent implements AgentAdapter {
   async *streamEvents(): AsyncIterable<AgentEvent> {
     yield* this.agentEvents;
   }
+}
+
+function sessionSummary(overrides: Partial<AgentSessionSummary>): AgentSessionSummary {
+  return {
+    threadId: "thr_123",
+    cwd: "/workspace",
+    title: "current work",
+    preview: "current work",
+    createdAt: 1778650000,
+    updatedAt: 1778659000,
+    ...overrides,
+  };
 }

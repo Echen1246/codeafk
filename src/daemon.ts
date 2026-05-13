@@ -149,6 +149,14 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       channel,
       session,
       channelEvents: channelEventsFromIterator(channelEvents),
+      onSessionChanged: async (nextSession) => {
+        activeThreadId = nextSession.threadId;
+        activeCwd = nextSession.cwd;
+        await patchLastThreadState(statePath, {
+          threadId: nextSession.threadId,
+          cwd: nextSession.cwd,
+        });
+      },
       signal: abortController.signal,
     });
   } catch (error) {

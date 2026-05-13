@@ -433,9 +433,9 @@ export class CodexAdapter implements AgentAdapter {
     await this.request("turn/interrupt", { threadId: sessionId, turnId });
   }
 
-  async *streamEvents(sessionId: string): AsyncIterable<AgentEvent> {
+  async *streamEvents(sessionId?: string): AsyncIterable<AgentEvent> {
     for await (const event of this.events) {
-      if (event.sessionId === sessionId) {
+      if (sessionId === undefined || event.sessionId === sessionId) {
         yield event;
       }
     }

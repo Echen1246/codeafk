@@ -16,6 +16,8 @@ export type SessionPickerOptions = {
   channel: MessageChannel;
   events: AsyncIterator<ChannelEvent>;
   defaultCwd: string;
+  initialPrompt?: string | null;
+  requireSessionsCommand?: boolean;
   now?: Date;
   signal?: AbortSignal;
 };
@@ -41,11 +43,18 @@ type ProjectOption = {
 export async function selectSessionFromChannel(
   options: SessionPickerOptions
 ): Promise<SessionSelection> {
-  await options.channel.send({
-    text: `Pager started for ${basename(options.defaultCwd)}.\nSend /sessions to choose a project and Codex session.`,
-  });
+  const initialPrompt =
+    options.initialPrompt === undefined
+      ? `Pager started for ${basename(options.defaultCwd)}.\nSend /sessions to choose a project and Codex session.`
+      : options.initialPrompt;
 
-  await waitForSessionsCommand(options.channel, options.events, options.signal);
+  if (initialPrompt !== null) {
+    await options.channel.send({ text: initialPrompt });
+  }
+
+  if (options.requireSessionsCommand ?? true) {
+    await waitForSessionsCommand(options.channel, options.events, options.signal);
+  }
 
   const recentSessions = await options.agent.listSessions({ limit: 50 });
   const project = await selectProject(options, projectOptions(recentSessions, options.defaultCwd));

@@ -87,5 +87,5 @@ export interface AgentAdapter {
   steerActiveTurn(sessionId: string, turnId: string, text: string): Promise<void>;
   answerApproval(sessionId: string, approvalId: string, decision: ApprovalDecision): Promise<void>;
   interrupt(sessionId: string, turnId: string): Promise<void>;
-  streamEvents(sessionId: string): AsyncIterable<AgentEvent>;
+  streamEvents(sessionId?: string): AsyncIterable<AgentEvent>;
 }

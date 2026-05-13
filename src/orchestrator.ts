@@ -4,6 +4,7 @@ import { basename } from "node:path";
 import type { AgentAdapter, AgentEvent, AgentSession } from "./agent/types.js";
 import { ApprovalRegistry } from "./approval.js";
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "./channel/types.js";
+import { selectSessionFromChannel } from "./session-picker.js";
 
 const CHECKPOINT_THREE_BUSY_MESSAGE =
   "Codex is still working on the previous message. Wait for it to finish, then send the next instruction.";
@@ -15,22 +16,36 @@ export type OrchestratorOptions = {
   session: AgentSession;
   approvals?: ApprovalRegistry;
   channelEvents?: AsyncIterable<ChannelEvent>;
+  onSessionChanged?: (session: AgentSession) => Promise<void> | void;
   signal?: AbortSignal;
 };
 
 export async function runOrchestrator(options: OrchestratorOptions): Promise<void> {
   let activeTurn = false;
+  let currentSession = options.session;
   const approvals = options.approvals ?? new ApprovalRegistry();
   const latestDiffs = new Map<string, LatestDiff>();
+  const channelEvents = (options.channelEvents ?? options.channel.events())[Symbol.asyncIterator]();
+  const setSession = async (session: AgentSession): Promise<void> => {
+    currentSession = session;
+    latestDiffs.clear();
+    await options.onSessionChanged?.(session);
+  };
 
   await Promise.race([
     Promise.all([
-      forwardChannelEvents(options, approvals, () => activeTurn, (value) => {
-        activeTurn = value;
+      forwardChannelEvents(options, approvals, channelEvents, {
+        getSession: () => currentSession,
+        setSession,
+        isTurnActive: () => activeTurn,
+        setTurnActive: (value) => {
+          activeTurn = value;
+        },
       }),
       forwardAgentEvents(
         options,
         approvals,
+        () => currentSession,
         () => {
           activeTurn = false;
         },
@@ -44,16 +59,16 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<voi
 async function forwardChannelEvents(
   options: OrchestratorOptions,
   approvals: ApprovalRegistry,
-  isTurnActive: () => boolean,
-  setTurnActive: (value: boolean) => void
+  channelEvents: AsyncIterator<ChannelEvent>,
+  state: ChannelForwardingState
 ): Promise<void> {
-  for await (const event of options.channelEvents ?? options.channel.events()) {
+  for await (const event of asAsyncIterable(channelEvents)) {
     if (isAborted(options.signal)) {
       return;
     }
 
     if (event.type === "message") {
-      await handleChannelMessage(options, event, isTurnActive, setTurnActive);
+      await handleChannelMessage(options, event, channelEvents, state);
       continue;
     }
 
@@ -66,29 +81,63 @@ async function forwardChannelEvents(
 async function handleChannelMessage(
   options: OrchestratorOptions,
   event: Extract<ChannelEvent, { type: "message" }>,
-  isTurnActive: () => boolean,
-  setTurnActive: (value: boolean) => void
+  channelEvents: AsyncIterator<ChannelEvent>,
+  state: ChannelForwardingState
 ): Promise<void> {
   const text = event.text.trim();
   if (text.length === 0) {
     return;
   }
 
-  if (text === "/sessions") {
-    await options.channel.send({
-      text: "Session switching is available before a Codex session starts. Run `apgr resume` or `apgr stop`, then `apgr start` to choose again.",
-    });
+  if (text === "/switch" || text === "/sessions") {
+    await handleSessionSwitch(options, channelEvents, state);
     return;
   }
 
-  if (isTurnActive()) {
+  if (state.isTurnActive()) {
     await options.channel.send({ text: CHECKPOINT_THREE_BUSY_MESSAGE });
     return;
   }
 
-  setTurnActive(true);
-  await options.agent.sendMessage(options.session.sessionId, text);
+  state.setTurnActive(true);
+  await options.agent.sendMessage(state.getSession().sessionId, text);
   await options.channel.send({ text: "Sent to Codex." });
+}
+
+async function handleSessionSwitch(
+  options: OrchestratorOptions,
+  channelEvents: AsyncIterator<ChannelEvent>,
+  state: ChannelForwardingState
+): Promise<void> {
+  if (state.isTurnActive()) {
+    await options.channel.send({
+      text: "Codex is still working. Switch sessions after it finishes.",
+    });
+    return;
+  }
+
+  const currentSession = state.getSession();
+  const selection = await selectSessionFromChannel({
+    agent: options.agent,
+    channel: options.channel,
+    events: channelEvents,
+    defaultCwd: currentSession.cwd,
+    initialPrompt: "Switching sessions.",
+    requireSessionsCommand: false,
+    signal: options.signal,
+  });
+  const session =
+    selection.threadId === undefined
+      ? await options.agent.startSession({ cwd: selection.cwd })
+      : await options.agent.resumeSession(selection.threadId, { cwd: selection.cwd });
+
+  await state.setSession(session);
+  await options.channel.send({
+    text:
+      selection.threadId === undefined
+        ? `Started a new session in ${basename(selection.cwd)}. What would you like to do?`
+        : `Resumed ${shortThreadId(session.threadId)}. What would you like to do?`,
+  });
 }
 
 async function handleButtonPress(
@@ -115,17 +164,29 @@ async function handleButtonPress(
 async function forwardAgentEvents(
   options: OrchestratorOptions,
   approvals: ApprovalRegistry,
+  getSession: () => AgentSession,
   markTurnComplete: () => void,
   latestDiffs: Map<string, LatestDiff>
 ): Promise<void> {
-  for await (const event of options.agent.streamEvents(options.session.sessionId)) {
+  for await (const event of options.agent.streamEvents()) {
     if (isAborted(options.signal)) {
       return;
+    }
+
+    if (event.sessionId !== getSession().sessionId) {
+      continue;
     }
 
     await handleAgentEvent(options.channel, approvals, event, markTurnComplete, latestDiffs);
   }
 }
+
+type ChannelForwardingState = {
+  getSession: () => AgentSession;
+  setSession: (session: AgentSession) => Promise<void>;
+  isTurnActive: () => boolean;
+  setTurnActive: (value: boolean) => void;
+};
 
 async function handleAgentEvent(
   channel: MessageChannel,
@@ -293,6 +354,16 @@ function pluralize(word: string, count: number): string {
 function safeAttachmentName(turnId: string): string {
   const filename = basename(turnId).replace(/[^A-Za-z0-9._-]/g, "_");
   return filename.length === 0 ? "codex-diff" : filename;
+}
+
+function shortThreadId(threadId: string): string {
+  return threadId.length <= 12 ? threadId : threadId.slice(0, 12);
+}
+
+function asAsyncIterable<T>(iterator: AsyncIterator<T>): AsyncIterable<T> {
+  return {
+    [Symbol.asyncIterator]: () => iterator,
+  };
 }
 
 function asError(error: unknown): Error {
