@@ -1,16 +1,55 @@
 {
   "name": "agent-pager",
-  "version": "0.0.0",
-  "description": "A pager for your coding agent.",
+  "version": "0.1.0",
+  "description": "Stay in the Codex loop from Telegram while you are away from your laptop.",
   "type": "module",
   "bin": {
-    "apgr": "./dist/cli.js"
+    "apgr": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc --project tsconfig.json && chmod +x dist/cli.js",
+    "check": "pnpm typecheck && pnpm test",
     "dev:local-loop": "tsx src/dev/local-loop.ts",
+    "pack:dry-run": "npm pack --dry-run",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm check",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "files": [
+    "dist/agent",
+    "dist/channel",
+    "dist/commands",
+    "dist/approval.js",
+    "dist/cli.js",
+    "dist/config.js",
+    "dist/daemon.js",
+    "dist/orchestrator.js",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SPEC.md"
+  ],
+  "keywords": [
+    "codex",
+    "telegram",
+    "cli",
+    "agent",
+    "pager",
+    "away-mode"
+  ],
+  "author": "Echen1246",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Echen1246/codeafk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Echen1246/codeafk/issues"
+  },
+  "homepage": "https://github.com/Echen1246/codeafk#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=20"

@@ -1,11 +1,185 @@
 # Agent Pager
 
-A pager for your coding agent. Agent Pager lets you leave Codex running on your laptop, receive updates on your phone, answer questions, approve risky actions, and resume the same thread when you get back to your desk.
+Agent Pager lets you leave Codex running on your laptop and keep working from Telegram. Send prompts from your phone, approve shell commands with buttons, get Codex's replies, review the final `.diff`, then resume the same Codex thread when you are back at your desk.
 
-Checkpoint 0 demo:
+This is experimental. The Codex app-server protocol is still moving, and v0 is intentionally small: Codex only, Telegram only, no hosted relay, no web dashboard, no accounts.
+
+## What Works In v0
+
+- `apgr init` pairs a Telegram bot with your laptop.
+- `apgr start` starts Away Mode in the current repo.
+- Telegram messages become Codex prompts.
+- Codex replies are sent back to Telegram.
+- Shell command approvals show up as inline Approve and Deny buttons.
+- Completed turns send a changed-file summary and raw `.diff` attachment.
+- `apgr status` shows the current thread, daemon state, Codex state, channel state, and uptime.
+- `apgr resume` stops Away Mode and prints the `codex resume <thread-id>` command.
+
+## Requirements
+
+- macOS or another Node-supported desktop environment
+- Node.js 20 or newer
+- Codex installed with `codex app-server` support
+- A Telegram account
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+
+For local development, this repo uses pnpm 10.
+
+## Install
+
+Once v0.1.0 is published:
+
+```bash
+npm install -g agent-pager
+```
+
+From a local checkout:
 
 ```bash
 pnpm install
 pnpm build
-./dist/cli.js --help
+npm link
 ```
+
+Confirm the CLI is available:
+
+```bash
+apgr --help
+```
+
+## Quick Start
+
+1. Create a Telegram bot with [@BotFather](https://t.me/BotFather), then copy the bot token.
+2. Pair Agent Pager:
+
+   ```bash
+   apgr init
+   ```
+
+3. Paste the token when prompted.
+4. Send any message to your bot from Telegram.
+5. Confirm the pairing prompt in your terminal.
+6. Start Away Mode from the repo you want Codex to work in:
+
+   ```bash
+   cd /path/to/your/project
+   apgr start
+   ```
+
+7. Text your bot from your phone.
+8. When you are back at your desk, stop Away Mode and resume the same Codex thread:
+
+   ```bash
+   apgr resume
+   codex resume <thread-id>
+   ```
+
+## Telegram Flow
+
+The v0 UI is plain Telegram messages and inline buttons:
+
+```text
+You:
+look at the failing test and propose a fix
+
+Agent Pager:
+Sent to Codex.
+
+Codex:
+I found the failing assertion. The parser returns an empty path for /dev/null...
+
+Agent Pager:
+Codex needs to run:
+pnpm test
+
+[Approve] [Deny]
+
+Agent Pager:
+Codex finished.
+Changed: README.md (+1 -0)
+
+Attachment:
+turn_abc123.diff
+```
+
+Raw diffs are not pretty on mobile yet. They are still useful: a line starting with `+` was added, a line starting with `-` was removed, and unchanged lines are shown for context. Syntax-highlighted HTML diffs are planned for v0.5.
+
+## Commands
+
+```text
+apgr init     Pair Agent Pager with Telegram
+apgr start    Start Away Mode in the current workspace
+apgr stop     Stop Away Mode
+apgr resume   Release the session and print the Codex resume command
+apgr status   Show Agent Pager status
+```
+
+## Files On Disk
+
+Agent Pager stores only local config and local state:
+
+- Config: `~/.config/apgr/config.toml`
+- Last thread state: `~/.local/state/apgr/last-thread.json`
+- Diff snapshots: `~/.local/state/apgr/diffs/<turnId>.diff`
+
+Config files are written with owner-only permissions. Bot tokens stay on your machine.
+
+## Security Model
+
+Agent Pager does not run a hosted service. Your laptop talks directly to Telegram's Bot API and the local Codex app-server process.
+
+No code, repo contents, diffs, logs, or telemetry are sent anywhere except the messaging channel you configured. For v0, that means Telegram. The project deliberately avoids a web UI, cloud relay, account system, analytics, and third-party crash reporting.
+
+Shell approvals are surfaced to Telegram because Codex asks for them. Agent Pager does not add a separate file-change approval layer in v0.
+
+## Architecture
+
+```text
+Telegram bot API
+      ^
+      |
+TelegramChannel
+      ^
+      |
+Orchestrator
+      |
+      v
+CodexAdapter
+      |
+      v
+codex app-server
+```
+
+The adapter turns Codex app-server events into internal `AgentEvent`s. The orchestrator decides how to render those events into Telegram messages, buttons, and file attachments.
+
+## Development
+
+```bash
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm test
+XDG_CACHE_HOME=/private/tmp/apgr-cache pnpm dlx knip
+```
+
+Local Codex smoke test:
+
+```bash
+pnpm tsx src/dev/local-loop.ts "list files in this directory"
+```
+
+Package dry run:
+
+```bash
+pnpm pack:dry-run
+```
+
+## Roadmap
+
+- v0: Codex + Telegram, shell approvals, raw `.diff` attachments.
+- v0.5: Discord, file-change approval flow, syntax-highlighted HTML diffs.
+- v1: VS Code extension that also works in Cursor.
+- v2: More CLI coding agents.
+- v3: Cursor SDK adapter when the right integration surface exists.
+
+See [SPEC.md](./SPEC.md) for the full product document.
