@@ -168,6 +168,10 @@ class FakeAgent implements AgentAdapter {
     return session;
   }
 
+  async listSessions(): Promise<[]> {
+    return [];
+  }
+
   async sendMessage(sessionId: string, text: string): Promise<void> {
     this.sentMessages.push({ sessionId, text });
   }

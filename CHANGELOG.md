@@ -8,6 +8,7 @@ Initial v0 release.
 
 - `apgr init` for Telegram bot pairing.
 - `apgr start`, `apgr stop`, `apgr status`, and `apgr resume`.
+- Telegram `/sessions` picker for choosing a recent project and Codex thread before starting work.
 - Codex app-server adapter for starting turns, receiving messages, handling shell approvals, tracking completion, and snapshotting diffs.
 - Telegram channel adapter with long polling, inline approval buttons, and `.diff` attachments.
 - Local state in `~/.local/state/apgr`.

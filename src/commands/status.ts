@@ -44,7 +44,7 @@ export function formatStatusReport(options: {
 
   lines.push(`Channel: ${options.configuredChannel} (${channelStatus})`);
   lines.push(`Codex:  ${codexStatus}`);
-  lines.push(`Thread:  ${options.state.threadId}`);
+  lines.push(`Thread:  ${options.state.threadId ?? "none"}`);
   lines.push(`Workspace: ${options.state.cwd}`);
   lines.push(
     `Daemon:  ${

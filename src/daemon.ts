@@ -8,6 +8,11 @@ import type { MessageChannel } from "./channel/types.js";
 import { TelegramChannel } from "./channel/telegram.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import { runOrchestrator } from "./orchestrator.js";
+import {
+  channelEventsFromIterator,
+  isSessionSelectionAborted,
+  selectSessionFromChannel,
+} from "./session-picker.js";
 
 const STATE_FILE_MODE = 0o600;
 const STATE_DIR_MODE = 0o700;
@@ -17,7 +22,7 @@ type AgentHealthStatus = "running" | "dead";
 type ChannelHealthStatus = "connected" | "disconnected";
 
 export type LastThreadState = {
-  threadId: string;
+  threadId: string | null;
   cwd: string;
   pid: number;
   status: "running" | "stopped";
@@ -80,13 +85,11 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     });
   const stdout = options.stdout ?? process.stdout;
   const abortController = new AbortController();
-
-  const session = await agent.startSession({ cwd });
   const startedAt = new Date().toISOString();
 
   await writeLastThreadState(
     {
-      threadId: session.threadId,
+      threadId: null,
       cwd,
       pid: process.pid,
       status: "running",
@@ -100,27 +103,59 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
   writeLine(stdout, "apgr is running.\n");
   writeLine(stdout, `Workspace:  ${cwd}`);
   writeLine(stdout, "Agent:      Codex");
-  writeLine(stdout, `Thread:     ${session.threadId}`);
+  writeLine(stdout, "Thread:     choosing");
   writeLine(stdout, "Channel:    Telegram");
   writeLine(stdout, "\nAway Mode is ON.");
-  writeLine(stdout, "Text your bot to send prompts to Codex.");
+  writeLine(stdout, "Text your bot /sessions to choose a project and Codex session.");
   writeLine(stdout, "Press Ctrl+C or run `apgr stop` to end.");
 
   await channel.start();
-  await channel.send({
-    text: `Pager started for ${basename(cwd)}.\nSend a message to begin.`,
-  });
+  const channelEvents = channel.events()[Symbol.asyncIterator]();
 
   const removeSignalHandlers = installSignalHandlers(() => abortController.abort());
+  let activeThreadId: string | null = null;
+  let activeCwd = cwd;
 
   try {
+    const selection = await selectSessionFromChannel({
+      agent,
+      channel,
+      events: channelEvents,
+      defaultCwd: cwd,
+      signal: abortController.signal,
+    });
+    activeCwd = selection.cwd;
+    const session =
+      selection.threadId === undefined
+        ? await agent.startSession({ cwd: selection.cwd })
+        : await agent.resumeSession(selection.threadId, { cwd: selection.cwd });
+    activeThreadId = session.threadId;
+
+    await patchLastThreadState(statePath, {
+      threadId: session.threadId,
+      cwd: selection.cwd,
+    });
+    await channel.send({
+      text:
+        selection.threadId === undefined
+          ? `Started a new session in ${basename(selection.cwd)}. What would you like to do?`
+          : `Resumed ${shortThreadId(session.threadId)}. What would you like to do?`,
+    });
+    writeLine(stdout, `Selected workspace: ${selection.cwd}`);
+    writeLine(stdout, `Selected thread:    ${session.threadId}`);
+
     await runOrchestrator({
       agent,
       channel,
       session,
+      channelEvents: channelEventsFromIterator(channelEvents),
       signal: abortController.signal,
     });
   } catch (error) {
+    if (isSessionSelectionAborted(error)) {
+      return;
+    }
+
     if (!isCodexProcessError(error)) {
       throw error;
     }
@@ -139,8 +174,8 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     channelStatus = "disconnected";
     await writeLastThreadState(
       {
-        threadId: session.threadId,
-        cwd,
+        threadId: activeThreadId,
+        cwd: activeCwd,
         pid: process.pid,
         status: "stopped",
         agentStatus,
@@ -252,10 +287,14 @@ function writeLine(stdout: OutputWriter, line: string): void {
   stdout.write(`${line}\n`);
 }
 
+function shortThreadId(threadId: string): string {
+  return threadId.length <= 12 ? threadId : threadId.slice(0, 12);
+}
+
 function isLastThreadState(value: unknown): value is LastThreadState {
   return (
     isRecord(value) &&
-    typeof value.threadId === "string" &&
+    (typeof value.threadId === "string" || value.threadId === null) &&
     typeof value.cwd === "string" &&
     typeof value.pid === "number" &&
     (value.status === "running" || value.status === "stopped") &&

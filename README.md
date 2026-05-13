@@ -7,7 +7,7 @@ This is experimental. The Codex app-server protocol is still moving, and v0 is i
 ## What Works In v0
 
 - `apgr init` pairs a Telegram bot with your laptop.
-- `apgr start` starts Away Mode in the current repo.
+- `apgr start` starts Away Mode and lets you pick a recent project/session from Telegram.
 - Telegram messages become Codex prompts.
 - Codex replies are sent back to Telegram.
 - Shell command approvals show up as inline Approve and Deny buttons.
@@ -66,8 +66,11 @@ apgr --help
    apgr start
    ```
 
-7. Text your bot from your phone.
-8. When you are back at your desk, stop Away Mode and resume the same Codex thread:
+7. In Telegram, send `/sessions`.
+8. Choose a project.
+9. Choose a recent Codex session, or reply `new` to start a new one.
+10. Text your bot from your phone.
+11. When you are back at your desk, stop Away Mode and resume the same Codex thread:
 
    ```bash
    apgr resume
@@ -80,10 +83,36 @@ The v0 UI is plain Telegram messages and inline buttons:
 
 ```text
 You:
-look at the failing test and propose a fix
+/sessions
 
 Agent Pager:
-Sent to Codex.
+Recent projects:
+
+[1] codeafk - /Users/eddie/Documents/codeafk (6 sessions)
+[2] myapp - /Users/eddie/Documents/myapp (3 sessions)
+
+Reply with a number.
+
+You:
+2
+
+Agent Pager:
+Recent sessions in myapp:
+
+[1] today, 14m - "fix the failing auth callback test" (47 msg)
+[2] today, 2h - "add tests for the expired-state case" (23 msg)
+[3] yesterday - "refactor the OAuth state validation" (89 msg)
+
+Reply with a number, or "new" for a new session.
+
+You:
+1
+
+Agent Pager:
+Resumed thr_ghi789. What would you like to do?
+
+You:
+look at the failing test and propose a fix
 
 Codex:
 I found the failing assertion. The parser returns an empty path for /dev/null...
@@ -108,7 +137,7 @@ Raw diffs are not pretty on mobile yet. They are still useful: a line starting w
 
 ```text
 apgr init     Pair Agent Pager with Telegram
-apgr start    Start Away Mode in the current workspace
+apgr start    Start Away Mode and choose a project/session from Telegram
 apgr stop     Stop Away Mode
 apgr resume   Release the session and print the Codex resume command
 apgr status   Show Agent Pager status

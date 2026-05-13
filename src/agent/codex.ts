@@ -9,7 +9,9 @@ import type {
   AgentAdapter,
   AgentEvent,
   AgentSession,
+  AgentSessionSummary,
   ApprovalDecision,
+  ListAgentSessionsOptions,
   StartSessionOptions,
 } from "./types.js";
 
@@ -362,10 +364,32 @@ export class CodexAdapter implements AgentAdapter {
     return sessionFromThreadResponse(result, options.cwd);
   }
 
-  async resumeSession(sessionId: string): Promise<AgentSession> {
-    await this.ensureInitialized(process.cwd());
-    const result = await this.request("thread/resume", { threadId: sessionId });
-    return sessionFromThreadResponse(result, process.cwd());
+  async resumeSession(sessionId: string, options: { cwd?: string } = {}): Promise<AgentSession> {
+    const cwd = options.cwd ?? process.cwd();
+    await this.ensureInitialized(cwd);
+    const result = await this.request("thread/resume", {
+      threadId: sessionId,
+      cwd,
+    });
+    return sessionFromThreadResponse(result, cwd);
+  }
+
+  async listSessions(options: ListAgentSessionsOptions = {}): Promise<AgentSessionSummary[]> {
+    await this.ensureInitialized(options.cwd ?? process.cwd());
+    const result = await this.request("thread/list", {
+      limit: options.limit ?? 10,
+      sortKey: "updated_at",
+      sortDirection: "desc",
+      archived: false,
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    });
+    const summaries = sessionSummariesFromThreadListResponse(result);
+
+    if (options.includeMessageCounts !== true) {
+      return summaries;
+    }
+
+    return Promise.all(summaries.map((summary) => this.withMessageCount(summary)));
   }
 
   async sendMessage(sessionId: string, text: string): Promise<void> {
@@ -510,6 +534,24 @@ export class CodexAdapter implements AgentAdapter {
       return Promise.reject(new Error("Codex app-server is not running"));
     }
     return this.connection.request(method, params);
+  }
+
+  private async withMessageCount(summary: AgentSessionSummary): Promise<AgentSessionSummary> {
+    try {
+      const result = await this.request("thread/read", {
+        threadId: summary.threadId,
+        includeTurns: true,
+      });
+      return {
+        ...summary,
+        messageCount: countMessagesInThreadReadResponse(result),
+      };
+    } catch (error) {
+      this.onWarning(
+        `Warning: could not read Codex message count for ${summary.threadId}: ${asError(error).message}`
+      );
+      return summary;
+    }
   }
 
   private handleNotification(method: string, params: unknown): void {
@@ -761,6 +803,82 @@ function sessionFromThreadResponse(result: unknown, fallbackCwd: string): AgentS
     cwd: typeof result.cwd === "string" ? result.cwd : fallbackCwd,
     model: typeof result.model === "string" ? result.model : "unknown",
   };
+}
+
+function sessionSummariesFromThreadListResponse(result: unknown): AgentSessionSummary[] {
+  if (!isRecord(result) || !Array.isArray(result.data)) {
+    throw new Error("Codex app-server returned an invalid thread list response");
+  }
+
+  return result.data.flatMap((thread) => {
+    if (!isThreadSummary(thread)) {
+      return [];
+    }
+
+    return [
+      {
+        threadId: thread.id,
+        cwd: thread.cwd,
+        title: displayThreadTitle(thread),
+        preview: thread.preview,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+      },
+    ];
+  });
+}
+
+function countMessagesInThreadReadResponse(result: unknown): number | undefined {
+  if (!isRecord(result) || !isRecord(result.thread) || !Array.isArray(result.thread.turns)) {
+    return undefined;
+  }
+
+  let count = 0;
+  for (const turn of result.thread.turns) {
+    if (!isRecord(turn) || !Array.isArray(turn.items)) {
+      continue;
+    }
+
+    for (const item of turn.items) {
+      if (isRecord(item) && (item.type === "userMessage" || item.type === "agentMessage")) {
+        count += 1;
+      }
+    }
+  }
+
+  return count;
+}
+
+function displayThreadTitle(thread: {
+  name: string | null;
+  preview: string;
+  id: string;
+}): string {
+  const title = thread.name ?? firstLine(thread.preview);
+  return title.length === 0 ? thread.id : title;
+}
+
+function firstLine(text: string): string {
+  return text.split(/\r?\n/)[0]?.trim() ?? "";
+}
+
+function isThreadSummary(value: unknown): value is {
+  id: string;
+  preview: string;
+  cwd: string;
+  createdAt: number;
+  updatedAt: number;
+  name: string | null;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.preview === "string" &&
+    typeof value.cwd === "string" &&
+    typeof value.createdAt === "number" &&
+    typeof value.updatedAt === "number" &&
+    (typeof value.name === "string" || value.name === null)
+  );
 }
 
 function isAgentMessageDelta(value: unknown): value is {

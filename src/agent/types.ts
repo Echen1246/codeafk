@@ -56,6 +56,12 @@ export type StartSessionOptions = {
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
 };
 
+export type ListAgentSessionsOptions = {
+  cwd?: string;
+  limit?: number;
+  includeMessageCounts?: boolean;
+};
+
 export type AgentSession = {
   sessionId: string;
   threadId: string;
@@ -63,9 +69,20 @@ export type AgentSession = {
   model: string;
 };
 
+export type AgentSessionSummary = {
+  threadId: string;
+  cwd: string;
+  title: string;
+  preview: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount?: number;
+};
+
 export interface AgentAdapter {
   startSession(options: StartSessionOptions): Promise<AgentSession>;
-  resumeSession(sessionId: string): Promise<AgentSession>;
+  resumeSession(sessionId: string, options?: { cwd?: string }): Promise<AgentSession>;
+  listSessions(options?: ListAgentSessionsOptions): Promise<AgentSessionSummary[]>;
   sendMessage(sessionId: string, text: string): Promise<void>;
   steerActiveTurn(sessionId: string, turnId: string, text: string): Promise<void>;
   answerApproval(sessionId: string, approvalId: string, decision: ApprovalDecision): Promise<void>;

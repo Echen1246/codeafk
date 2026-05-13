@@ -18,6 +18,12 @@ export async function resumeCommand(): Promise<void> {
 
   await markLastThreadStopped(state);
 
+  if (state.threadId === null) {
+    console.log("Away Mode stopped.");
+    console.log("No Codex thread was selected yet.");
+    return;
+  }
+
   console.log("Away Mode stopped.\n");
   console.log("To continue this thread in your terminal:");
   console.log(`  codex resume ${state.threadId}`);

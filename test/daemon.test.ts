@@ -64,7 +64,11 @@ describe("daemon state", () => {
   it("reports Codex crashes to the channel and marks the last thread dead", async () => {
     const directory = await mkdtemp(join(tmpdir(), "apgr-state-test-"));
     const statePath = join(directory, "last-thread.json");
-    const channel = new FakeChannel();
+    const channel = new FakeChannel([
+      { type: "message", text: "/sessions", fromUserId: "u1" },
+      { type: "message", text: "1", fromUserId: "u1" },
+      { type: "message", text: "new", fromUserId: "u1" },
+    ]);
 
     await runDaemon({
       agent: new CrashingAgent(),
@@ -114,6 +118,10 @@ class CrashingAgent implements AgentAdapter {
     return session;
   }
 
+  async listSessions(): Promise<[]> {
+    return [];
+  }
+
   async sendMessage(): Promise<void> {
     return Promise.resolve();
   }
@@ -142,6 +150,8 @@ class CrashingAgent implements AgentAdapter {
 class FakeChannel implements MessageChannel {
   readonly sentMessages: string[] = [];
 
+  constructor(private readonly channelEvents: ChannelEvent[] = []) {}
+
   async start(): Promise<void> {
     return Promise.resolve();
   }
@@ -156,5 +166,6 @@ class FakeChannel implements MessageChannel {
 
   async *events(): AsyncIterable<ChannelEvent> {
     await Promise.resolve();
+    yield* this.channelEvents;
   }
 }

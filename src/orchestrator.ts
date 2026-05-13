@@ -14,6 +14,7 @@ export type OrchestratorOptions = {
   channel: MessageChannel;
   session: AgentSession;
   approvals?: ApprovalRegistry;
+  channelEvents?: AsyncIterable<ChannelEvent>;
   signal?: AbortSignal;
 };
 
@@ -46,7 +47,7 @@ async function forwardChannelEvents(
   isTurnActive: () => boolean,
   setTurnActive: (value: boolean) => void
 ): Promise<void> {
-  for await (const event of options.channel.events()) {
+  for await (const event of options.channelEvents ?? options.channel.events()) {
     if (isAborted(options.signal)) {
       return;
     }
@@ -70,6 +71,13 @@ async function handleChannelMessage(
 ): Promise<void> {
   const text = event.text.trim();
   if (text.length === 0) {
+    return;
+  }
+
+  if (text === "/sessions") {
+    await options.channel.send({
+      text: "Session switching is available before a Codex session starts. Run `apgr resume` or `apgr stop`, then `apgr start` to choose again.",
+    });
     return;
   }
 

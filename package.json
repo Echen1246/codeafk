@@ -25,6 +25,7 @@
     "dist/config.js",
     "dist/daemon.js",
     "dist/orchestrator.js",
+    "dist/session-picker.js",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
