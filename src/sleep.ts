@@ -11,6 +11,8 @@ export interface SleepPreventer {
 }
 
 type SpawnLike = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
+const CAFFEINATE_DETAIL = "caffeinate";
+const CAFFEINATE_ARGS: string[] = [];
 
 export class NoopSleepPreventer implements SleepPreventer {
   constructor(private readonly detail = "not enabled") {}
@@ -41,10 +43,10 @@ export class CaffeinateSleepPreventer implements SleepPreventer {
     }
 
     if (this.child !== null) {
-      return { type: "active", detail: "caffeinate -dimsu" };
+      return { type: "active", detail: CAFFEINATE_DETAIL };
     }
 
-    const child = this.spawnImpl("caffeinate", ["-dimsu"], {
+    const child = this.spawnImpl("caffeinate", CAFFEINATE_ARGS, {
       stdio: "ignore",
     });
     child.once("exit", () => {
@@ -59,7 +61,7 @@ export class CaffeinateSleepPreventer implements SleepPreventer {
     });
     this.child = child;
 
-    return { type: "active", detail: "caffeinate -dimsu" };
+    return { type: "active", detail: CAFFEINATE_DETAIL };
   }
 
   async stop(): Promise<void> {

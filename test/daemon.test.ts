@@ -170,6 +170,43 @@ describe("daemon state", () => {
       status: "stopped",
     });
   });
+
+  it("sends recent context when Discord startup resumes an existing session", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "afk-state-test-"));
+    const statePath = join(directory, "last-thread.json");
+    const channel = new FakeChannel([
+      { type: "message", text: "/sessions", fromUserId: "u1" },
+      { type: "message", text: "1", fromUserId: "u1" },
+      { type: "message", text: "1", fromUserId: "u1" },
+    ]);
+
+    await runDaemon({
+      agent: new SwitchingAgent(
+        [
+          sessionSummary({
+            threadId: "thr_current",
+            cwd: "/workspace",
+            title: "current work",
+          }),
+        ],
+        [
+          { role: "user", text: "fix auth" },
+          { role: "agent", text: "I changed the callback test." },
+        ]
+      ),
+      channel,
+      config: testDiscordConfig,
+      cwd: "/workspace",
+      statePath,
+      sleepPreventer: new FakeSleepPreventer(),
+      stdout: { write: () => undefined },
+    });
+
+    expect(channel.sentMessages).toContain("Recent context from this Codex session (2 messages):");
+    expect(channel.sentMessages).toContain("You:\nfix auth");
+    expect(channel.sentMessages).toContain("Codex:\nI changed the callback test.");
+    expect(channel.sentMessages.at(-1)).toBe("Resumed thr_current. What would you like to do?");
+  });
 });
 
 const testConfig: AppConfig = {
@@ -178,6 +215,20 @@ const testConfig: AppConfig = {
     telegram: {
       bot_token: "token",
       chat_id: 123,
+    },
+  },
+  agent: {
+    type: "codex",
+  },
+};
+
+const testDiscordConfig: AppConfig = {
+  default_channel: "discord",
+  channels: {
+    discord: {
+      bot_token: "token",
+      user_id: "u1",
+      channel_id: "dm_1",
     },
   },
   agent: {
@@ -257,7 +308,10 @@ class FakeOutputWriter {
 }
 
 class SwitchingAgent implements AgentAdapter {
-  constructor(private readonly sessions: AgentSessionSummary[]) {}
+  constructor(
+    private readonly sessions: AgentSessionSummary[],
+    private readonly recentMessages: AgentTranscriptMessage[] = []
+  ) {}
 
   async startSession(options: StartSessionOptions): Promise<AgentSession> {
     return {
@@ -288,7 +342,7 @@ class SwitchingAgent implements AgentAdapter {
   }
 
   async readRecentMessages(): Promise<AgentTranscriptMessage[]> {
-    return [];
+    return this.recentMessages;
   }
 
   async sendMessage(): Promise<{ turnId: string }> {

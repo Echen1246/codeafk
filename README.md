@@ -1,10 +1,16 @@
 <img width="600" height="150" alt="afkcodedesk-ezgif com-resize" src="https://github.com/user-attachments/assets/f8e50fbf-1dc4-4e5e-9d94-3cb7f641ee3e" />
 
+[![npm](https://img.shields.io/npm/v/codeafk?logo=npm)](https://www.npmjs.com/package/codeafk)
+[![CI](https://github.com/Echen1246/codeafk/actions/workflows/ci.yml/badge.svg)](https://github.com/Echen1246/codeafk/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/codeafk)](./LICENSE)
+
 ## Keep your coding agent working while you're away from your keyboard
+
+Setup guides: [Telegram](./TELEGRAM.md) · [Discord](./DISCORD.md) · [Codex](./CODEX.md)
 
 Need to shower? Grab groceries? Go workout? Walk back from campus? Not without agentmaxxing you aren't.
 
-Enter `afk` on your laptop, leave your desk/shut the lid (auto-caffeinated), and talk to Codex from your phone through Telegram or Discord. You can send prompts, approve commands, trust approvals for the session, view diffs, and come back to the same Codex thread when you reopen your laptop.
+Enter `afk` on your laptop, leave your desk, and talk to Codex from your phone through Telegram or Discord. You can send prompts, approve commands, trust approvals for the session, view diffs, and come back to the same Codex thread when you reopen your laptop.
 
 CodeAFK is intentionally small: your laptop, Codex, and a chat app. There is no hosted relay, web dashboard, account system, login, or cloud sync. Just keep your laptop and phone online.
 
@@ -85,7 +91,7 @@ afk discord
 ## Daily Flow
 
 1. Run `afk` from your project folder and pre-select Telegram or Discord.
-2. Shut your laptop (stays awake) or leave your desk.
+2. Leave your desk, or use your normal closed-lid setup if your Mac supports it.
 3. While away, on your phone, send `/sessions` in your chat of choice.
 4. Pick a project.
 5. Pick an existing Codex chat session, or reply `new`.
@@ -98,7 +104,7 @@ AFK prints a `codex resume <thread-id>` command when it stops. Run that to conti
 
 ## Sleep Behavior
 
-On macOS, AFK starts `caffeinate -dimsu` while it is running. That helps keep the laptop awake during Away Mode.
+On macOS, AFK starts `caffeinate` while it is running. That helps prevent idle sleep during Away Mode.
 
 Closed-lid behavior still depends on your Mac, power, network, and sleep settings. Test your own setup before relying on it for a long errand.
 

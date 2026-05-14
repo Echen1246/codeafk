@@ -277,7 +277,7 @@ describe("runOrchestrator", () => {
 
     await runOrchestrator({ agent, channel, session });
 
-    expect(channel.sentMessages).toContain("Recent context from this Codex session:");
+    expect(channel.sentMessages).toContain("Recent context from this Codex session (2 messages):");
     expect(channel.sentMessages).toContain("You:\nfix auth");
     expect(channel.sentMessages).toContain("Codex:\nI changed the callback test.");
     expect(channel.sentMessages.at(-1)).toBe("Resumed thr_other. What would you like to do?");

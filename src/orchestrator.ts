@@ -319,7 +319,12 @@ export async function sendSessionCatchUp(
     return;
   }
 
-  await channel.send({ text: "Recent context from this Codex session:" });
+  await channel.send({
+    text: `Recent context from this Codex session (${messages.length} ${pluralize(
+      "message",
+      messages.length
+    )}):`,
+  });
   for (const message of messages) {
     await channel.send({ text: formatTranscriptMessage(message) });
   }

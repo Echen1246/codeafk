@@ -53,4 +53,4 @@ Your phone cannot start AFK if AFK is not already running on the laptop. The lap
 
 Start AFK from the repo you want Codex to work in. Starting it from a broad folder like your home directory can expose more files than you meant to expose.
 
-On macOS, AFK starts `caffeinate -dimsu` while it runs. Closed-lid behavior still depends on your Mac, power, network, and sleep settings.
+On macOS, AFK starts `caffeinate` while it runs. Closed-lid behavior still depends on your Mac, power, network, and sleep settings.

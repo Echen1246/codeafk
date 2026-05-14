@@ -17,10 +17,10 @@ describe("sleep prevention", () => {
       return child as unknown as ChildProcess;
     });
 
-    expect(preventer.start()).toEqual({ type: "active", detail: "caffeinate -dimsu" });
+    expect(preventer.start()).toEqual({ type: "active", detail: "caffeinate" });
     await preventer.stop();
 
-    expect(spawnCalls).toEqual([{ command: "caffeinate", args: ["-dimsu"] }]);
+    expect(spawnCalls).toEqual([{ command: "caffeinate", args: [] }]);
     expect(child.killSignal).toBe("SIGTERM");
   });
 
@@ -38,8 +38,8 @@ describe("sleep prevention", () => {
   it("formats sleep prevention status for terminal output", () => {
     const noop = new NoopSleepPreventer("tests disabled it");
 
-    expect(formatSleepPreventionStatus({ type: "active", detail: "caffeinate -dimsu" })).toBe(
-      "active (caffeinate -dimsu)"
+    expect(formatSleepPreventionStatus({ type: "active", detail: "caffeinate" })).toBe(
+      "active (caffeinate)"
     );
     expect(formatSleepPreventionStatus(noop.start())).toBe("disabled (tests disabled it)");
   });
