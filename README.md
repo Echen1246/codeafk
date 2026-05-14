@@ -1,33 +1,37 @@
 <img width="600" height="150" alt="afkcodedesk-ezgif com-resize" src="https://github.com/user-attachments/assets/f8e50fbf-1dc4-4e5e-9d94-3cb7f641ee3e" />
 
-## CodeAFK lets Codex keep working while you are away from your keyboard.
+## Keep your coding agent working while you're away from your keyboard
 
-Start `afk` on your laptop, leave the terminal open, and talk to Codex from your phone through Telegram or Discord. You can send prompts, approve commands, trust approvals for the session, and come back to the same Codex thread later.
+Need to shower? Grab groceries? Go workout? Walk back from campus? Not without agentmaxxing you aren't.
 
-CodeAFK is intentionally small: your laptop, Codex, and a chat app. There is no hosted relay, web dashboard, account system, analytics, or cloud sync.
+Enter `afk` on your laptop, leave your desk/shut the lid (auto-caffeinated), and talk to Codex from your phone through Telegram or Discord. You can send prompts, approve commands, trust approvals for the session, view diffs, and come back to the same Codex thread when you reopen your laptop.
 
-## Supported
+CodeAFK is intentionally small: your laptop, Codex, and a chat app. There is no hosted relay, web dashboard, account system, login, or cloud sync. Just keep your laptop and phone online.
+
+## Supported platforms
 
 Communicate through:
 
 - Telegram
 - Discord
 
-Currently supports:
+Code with:
 
 - Codex
+
+*Star the project to stay up-to-date on future platform updates! In development: Cursor*
 
 ## Why Use CodeAFK?
 
 Use CodeAFK when Codex is already working and you need to leave your desk.
 
-- Keep steering a task from your phone.
+- Keep steering a task from your phone or send a completely new prompt.
 - Approve or deny shell commands remotely.
 - Use `Approve & Trust` to reduce repeated prompts for the current session.
 - Read summaries and phone-friendly diffs when Codex finishes a turn.
-- Resume the same Codex thread when you get back.
+- Resume the same Codex thread when you get back for seamless real-world environment switching.
 
-This is not a mobile IDE. It is a remote control for the Codex session on your own laptop.
+FYI: This is not a mobile IDE. It is a remote control for the Codex session on your own laptop.
 
 ## Install
 
@@ -64,7 +68,7 @@ Codex setup notes are here:
 
 - [Codex setup and known issues](./CODEX.md)
 
-After setup, start AFK from the repo you want Codex to work in:
+After setup, enter 'afk' from the repo you want Codex to work in:
 
 ```bash
 cd /path/to/your/project
@@ -80,13 +84,15 @@ afk discord
 
 ## Daily Flow
 
-1. Run `afk` from your project folder.
-2. On your phone, send `/sessions`.
-3. Pick a project.
-4. Pick an existing Codex session, or reply `new`.
-5. Text the bot like you would text Codex.
-6. Approve, trust, or deny commands when Codex asks.
-7. Press `Ctrl+C` when you are back at your laptop.
+1. Run `afk` from your project folder and pre-select Telegram or Discord.
+2. Shut your laptop (stays awake) or leave your desk.
+3. While away, on your phone, send `/sessions` in your chat of choice.
+4. Pick a project.
+5. Pick an existing Codex chat session, or reply `new`.
+6. Text the bot like you would text Codex.
+7. Approve, trust, or deny commands when Codex asks.
+8. All code changes are sent to your phone as .html and .diff files for review.
+9. Press `Ctrl+C` when you are back at your laptop.
 
 AFK prints a `codex resume <thread-id>` command when it stops. Run that to continue the same thread locally.
 
@@ -130,3 +136,6 @@ pnpm check
 pnpm build
 pnpm pack:dry-run
 ```
+Give codeafk a try! Feedback welcome.
+
+Do NOT use afk while driving.
