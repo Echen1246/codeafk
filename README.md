@@ -1,9 +1,9 @@
 <img width="600" height="150" alt="afkcodedesk-ezgif com-resize" src="https://github.com/user-attachments/assets/f8e50fbf-1dc4-4e5e-9d94-3cb7f641ee3e" />
 
 
-## AfkCode lets you code while you're away from keyboard (afk).
+## CodeAFK lets you code while you're away from keyboard (afk).
 
-Start `afk` on your laptop, leave it running, and send prompts from Telegram while you are away. AFK forwards your messages to Codex, sends Codex replies back to Telegram, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
+Download with `npm -i codeafk`. From your CLI, enter `afk`, leave your laptop running or activate `caffeinate` while it's in your backpack, and send prompts/manage your IDE of choice from Telegram or Discord while you are away. AFK forwards your messages to Codex/Cursor, sends IDE replies back to Telegram, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
 
 It is small on purpose: Codex, Telegram, and your laptop. No hosted relay, dashboard, accounts, analytics, or cloud sync.
 
