@@ -3,9 +3,9 @@
 
 ## CodeAFK lets you code while you're away from keyboard (afk).
 
-Download with `npm -i codeafk`. From your CLI, enter `afk`, leave your laptop running or activate `caffeinate` while it's in your backpack, and send prompts/manage your IDE of choice from Telegram or Discord while you are away. AFK forwards your messages to Codex/Cursor, sends IDE replies back to Telegram, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
+Download with `npm install codeafk`. From your CLI, enter `afk`, leave your laptop running or activate `caffeinate` while it's in your backpack, and send prompts/manage your IDE of choice from Telegram or Discord while you are away. AFK forwards your messages to Codex, sends replies back to your phone, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
 
-It is small on purpose: Codex, Telegram, and your laptop. No hosted relay, dashboard, accounts, analytics, or cloud sync.
+It is small on purpose: Codex, your messaging app, and your laptop. No hosted relay, dashboard, accounts, analytics, or cloud sync.
 
 AFK is experimental. It depends on Codex app-server behavior, which may change.
 
@@ -22,8 +22,7 @@ AFK is experimental. It depends on Codex app-server behavior, which may change.
 
 - Node.js 20 or newer
 - Codex installed with `codex app-server` support
-- A Telegram account
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- A Telegram account and bot token, or a Discord account and bot token
 
 macOS is the best-supported platform in v0 because AFK runs `caffeinate -dimsu` while Away Mode is active. Other desktop platforms can run the CLI, but v0 does not keep them awake automatically.
 
@@ -47,6 +46,8 @@ afk --help
 
 ## First-Time Setup
 
+Telegram is the fastest setup:
+
 1. Open Telegram and message [@BotFather](https://t.me/BotFather).
 2. Create a bot with `/newbot`.
 3. Copy the bot token.
@@ -60,7 +61,22 @@ afk --help
 6. Send any Telegram message to your new bot.
 7. Confirm the pairing in your terminal.
 
-AFK saves the token on your laptop at `~/.config/afk/config.toml` with owner-only file permissions.
+Discord setup uses a DM-first bot flow:
+
+1. Open <https://discord.com/developers/applications>.
+2. Create an application, then open **Bot** and copy/reset the token.
+3. Run:
+
+   ```bash
+   afk init discord
+   ```
+
+4. Paste the bot token.
+5. Open the install URL AFK prints and add the bot to a private Discord server you control.
+6. Open a direct message with the bot and send any message.
+7. Confirm the pairing in your terminal.
+
+AFK saves tokens on your laptop at `~/.config/afk/config.toml` with owner-only file permissions.
 
 ## Daily Workflow
 
@@ -73,13 +89,21 @@ afk
 
 Keep that terminal open. It is the AFK process.
 
-For remote sessions, AFK starts Codex with `approval_policy="untrusted"` by default. This is intentional: phone control should not silently inherit a local Codex config that runs commands without asking. Trusted read-only commands may run immediately, but commands outside Codex's trusted set should produce approval buttons in Telegram. If you want AFK to use your existing Codex approval settings, start it explicitly:
+If you have multiple channels configured, choose one explicitly:
+
+```bash
+afk telegram
+afk discord
+afk --channel telegram
+```
+
+For remote sessions, AFK starts Codex with `approval_policy="untrusted"` by default. This is intentional: phone control should not silently inherit a local Codex config that runs commands without asking. Trusted read-only commands may run immediately, but commands outside Codex's trusted set should produce approval buttons on your phone. If you want AFK to use your existing Codex approval settings, start it explicitly:
 
 ```bash
 afk --accept-agent-config
 ```
 
-In Telegram:
+In Telegram or Discord:
 
 ```text
 You:
@@ -120,7 +144,7 @@ Codex:
 I found the failing assertion...
 ```
 
-If Codex asks to run a command, AFK shows Telegram buttons:
+If Codex asks to run a command, AFK shows approval buttons:
 
 ```text
 AFK:
@@ -170,7 +194,11 @@ If an already-open Codex window looks stale, reopen or resume the thread. Codex 
 
 ```text
 afk          Start Away Mode in the current workspace
-afk init     Pair AFK with Telegram
+afk telegram Start Away Mode with Telegram
+afk discord  Start Away Mode with Discord once configured
+afk init     Pair AFK with a channel
+afk init telegram
+afk init discord
 afk start    Same as afk
 afk stop     Stop Away Mode from another terminal
 afk resume   Stop Away Mode and print the Codex resume command
@@ -181,6 +209,7 @@ Start option:
 
 ```text
 --accept-agent-config  Use your Codex approval settings instead of AFK's remote-safe default
+--channel <channel>    Use a configured channel: telegram or discord
 ```
 
 ## What AFK Stores
@@ -191,7 +220,7 @@ AFK stores local config and local state only:
 - Last thread state: `~/.local/state/afk/last-thread.json`
 - Diff snapshots: `~/.local/state/afk/diffs/<turnId>.diff`
 
-Your Telegram bot token stays on your machine. AFK does not send code, repo contents, diffs, logs, or telemetry anywhere except the Telegram chat you paired.
+Your bot tokens stay on your machine. AFK does not send code, repo contents, diffs, logs, or telemetry anywhere except the chat you paired.
 
 During the rename from `apgr`, AFK also reads old config/state from `~/.config/apgr` and `~/.local/state/apgr` so existing local pairings keep working.
 
@@ -203,7 +232,7 @@ If `afk` cannot find Codex, confirm `codex` works in the same terminal:
 codex --version
 ```
 
-If Telegram stops responding, check that your laptop is awake, online, and still running `afk`.
+If Telegram or Discord stops responding, check that your laptop is awake, online, and still running `afk`.
 
 If approval buttons do not appear, Codex may already be allowed to run that command by your local Codex settings. AFK only shows buttons when Codex asks for approval.
 

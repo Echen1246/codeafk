@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added multi-channel config support with backward compatibility for legacy Telegram configs.
+- Added explicit channel selection with `afk telegram`, `afk discord`, and `--channel`.
+- Added `afk init telegram` and `afk init discord` channel-specific setup.
+- Added a DM-first Discord channel adapter with approval buttons and diff attachments.
+
 ## 0.1.1 - 2026-05-13
 
 ### Changed

@@ -402,18 +402,18 @@ User runs `codex resume thr_abc123` in their preferred shell or IDE terminal, an
 
 ### v0 — Codex + Telegram, minimal
 
-The shippable weekend project. One binary. No hosted infra. Telegram only. Codex only. Shell approvals only. Diffs are sent as local HTML and raw `.diff` file attachments.
+The shippable weekend project. One binary. No hosted infra. Telegram only. Codex only. Shell and basic file-change approvals. Diffs are sent as local HTML and raw `.diff` file attachments.
 
 Deliverables:
 
-- `afk init` (Telegram channel setup, phone pairing)
-- `afk` / `afk start` (spawns Codex app-server, opens Telegram polling, starts thread, keeps macOS awake with `caffeinate`)
+- `afk init` / `afk init telegram` (Telegram channel setup, phone pairing)
+- `afk` / `afk telegram` / `afk start` (spawns Codex app-server, opens Telegram polling, starts thread, keeps macOS awake with `caffeinate`)
 - `afk stop`
 - `afk resume` (prints `codex resume <thread-id>`)
 - `afk status` (shows current thread, channel state, uptime)
 - Send prompts from phone → Codex `turn/start` or `turn/steer`
 - Receive Codex agent messages buffered → Telegram
-- Shell command approval flow with inline buttons
+- Shell command and basic file-change approval flow with inline buttons
 - `turn/completed` summary with file list
 - HTML and raw `.diff` attachments on completion
 - Basic error handling and "Codex crashed" reporting
@@ -423,7 +423,7 @@ Success criterion: the maintainer can leave for the gym, send a real prompt from
 ### v0.5 — Polish + Discord
 
 - Discord channel adapter
-- File-change approval flow
+- Richer file-change approval previews
 - Richer syntax-highlighted diff attachment (one Shiki render → HTML file → send via channel)
 - Channel-side `/help`, `/status`, `/stop`, `/resume` commands
 - Heartbeat and "laptop offline" detection

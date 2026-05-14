@@ -1,9 +1,9 @@
-import { loadConfig } from "../config.js";
+import { configuredChannelTypes, loadConfig, type AppConfig } from "../config.js";
 import { isProcessRunning, readLastThreadState, type LastThreadState } from "../daemon.js";
 
 export async function statusCommand(): Promise<void> {
   const [config, state] = await Promise.all([loadConfig(), readLastThreadState()]);
-  const configuredChannel = config === null ? "not paired" : config.channel.type;
+  const configuredChannel = config === null ? "not paired" : formatConfiguredChannels(config);
   const daemonRunning = state !== null && state.status === "running" && isProcessRunning(state.pid);
 
   console.log(
@@ -14,6 +14,21 @@ export async function statusCommand(): Promise<void> {
       state,
     })
   );
+}
+
+function formatConfiguredChannels(config: AppConfig): string {
+  const channels = configuredChannelTypes(config);
+  if (channels.length === 0) {
+    return "not paired";
+  }
+
+  if (channels.length === 1) {
+    return channels[0] as string;
+  }
+
+  return channels
+    .map((channel) => (channel === config.default_channel ? `${channel} (default)` : channel))
+    .join(", ");
 }
 
 export function formatStatusReport(options: {

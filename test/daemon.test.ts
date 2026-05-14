@@ -173,10 +173,12 @@ describe("daemon state", () => {
 });
 
 const testConfig: AppConfig = {
-  channel: {
-    type: "telegram",
-    bot_token: "token",
-    chat_id: 123,
+  default_channel: "telegram",
+  channels: {
+    telegram: {
+      bot_token: "token",
+      chat_id: 123,
+    },
   },
   agent: {
     type: "codex",

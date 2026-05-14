@@ -4,6 +4,7 @@ import { resumeCommand } from "./commands/resume.js";
 import { parseStartArgs, startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
 import { stopCommand } from "./commands/stop.js";
+import { isChannelType } from "./config.js";
 
 type CommandName = "init" | "start" | "stop" | "resume" | "status";
 
@@ -48,7 +49,10 @@ function printHelp(): void {
 
 Usage:
   afk              Start Away Mode in the current workspace
+  afk telegram     Start Away Mode with Telegram
+  afk discord      Start Away Mode with Discord
   afk --accept-agent-config
+  afk --channel telegram
   afk <command>
   afk --help
 
@@ -57,6 +61,7 @@ ${commands.map((command) => `  ${command.name.padEnd(8)} ${command.description}`
 
 Options:
   --accept-agent-config  Use Codex approval settings from ~/.codex/config.toml instead of AFK's remote-safe approval default
+  --channel <channel>    Use a configured channel: telegram or discord
 `);
 }
 
@@ -74,6 +79,11 @@ async function main(args: string[]): Promise<void> {
   }
 
   if (commandName.startsWith("-")) {
+    await startCommand(parseStartArgs(args));
+    return;
+  }
+
+  if (isChannelType(commandName)) {
     await startCommand(parseStartArgs(args));
     return;
   }

@@ -5,8 +5,15 @@ import { basename, dirname, join } from "node:path";
 import { CodexAdapter, isCodexProcessError } from "./agent/codex.js";
 import type { AgentAdapter } from "./agent/types.js";
 import type { MessageChannel } from "./channel/types.js";
+import { DiscordChannel } from "./channel/discord.js";
 import { TelegramChannel } from "./channel/telegram.js";
-import { loadConfig, type AppConfig } from "./config.js";
+import {
+  loadConfig,
+  resolveChannelConfig,
+  type AppConfig,
+  type ChannelType,
+  type ResolvedChannelConfig,
+} from "./config.js";
 import { runOrchestrator, sendSessionCatchUp } from "./orchestrator.js";
 import {
   channelEventsFromIterator,
@@ -54,6 +61,7 @@ export type DaemonOptions = {
   sleepPreventer?: SleepPreventer;
   stdout?: OutputWriter;
   acceptAgentConfig?: boolean;
+  channelType?: ChannelType;
 };
 
 export function getStatePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -96,13 +104,8 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
   };
   const acceptAgentConfig = options.acceptAgentConfig ?? false;
   const agent = options.agent ?? new CodexAdapter({ acceptAgentConfig });
-  const channel =
-    options.channel ??
-    new TelegramChannel({
-      botToken: config.channel.bot_token,
-      chatId: config.channel.chat_id,
-      onConnectionStateChange: updateChannelStatus,
-  });
+  const selectedChannel = resolveChannelConfig(config, options.channelType);
+  const channel = options.channel ?? createChannel(selectedChannel, updateChannelStatus);
   const stdout = options.stdout ?? process.stdout;
   const sleepPreventer = options.sleepPreventer ?? createSleepPreventer();
   const abortController = new AbortController();
@@ -132,7 +135,7 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     writeLine(stdout, `Workspace:  ${cwd}`);
     writeLine(stdout, "Agent:      Codex");
     writeLine(stdout, "Thread:     choosing");
-    writeLine(stdout, "Channel:    Telegram");
+    writeLine(stdout, `Channel:    ${formatChannelName(selectedChannel.type)}`);
     writeLine(
       stdout,
       `Approval:   ${
@@ -143,7 +146,10 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     );
     writeLine(stdout, `Sleep:      ${formatSleepPreventionStatus(sleepStatus)}`);
     writeLine(stdout, "\nAway Mode is ON.");
-    writeLine(stdout, "Text your bot /sessions to choose a project and Codex session.");
+    writeLine(
+      stdout,
+      `Text your ${formatChannelName(selectedChannel.type)} bot /sessions to choose a project and Codex session.`
+    );
     writeLine(stdout, "Keep this terminal open while Away Mode runs.");
     writeLine(
       stdout,
@@ -374,6 +380,30 @@ async function requireConfig(): Promise<AppConfig> {
     throw new Error("No AFK config found. Run `afk init` first.");
   }
   return config;
+}
+
+function createChannel(
+  selectedChannel: ResolvedChannelConfig,
+  onConnectionStateChange: (status: ChannelHealthStatus, error?: Error) => void
+): MessageChannel {
+  if (selectedChannel.type === "telegram") {
+    return new TelegramChannel({
+      botToken: selectedChannel.config.bot_token,
+      chatId: selectedChannel.config.chat_id,
+      onConnectionStateChange,
+    });
+  }
+
+  return new DiscordChannel({
+    botToken: selectedChannel.config.bot_token,
+    userId: selectedChannel.config.user_id,
+    channelId: selectedChannel.config.channel_id,
+    onConnectionStateChange,
+  });
+}
+
+function formatChannelName(channelType: ChannelType): string {
+  return channelType === "telegram" ? "Telegram" : "Discord";
 }
 
 async function fileExists(path: string): Promise<boolean> {

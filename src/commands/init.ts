@@ -1,7 +1,16 @@
 import { createInterface, type Interface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { findExistingConfigPath, getConfigPath, saveConfig } from "../config.js";
+import {
+  findExistingConfigPath,
+  getConfigPath,
+  isChannelType,
+  loadConfig,
+  saveConfig,
+  type AppConfig,
+  type ChannelType,
+} from "../config.js";
+import { DiscordChannel, discordBotInviteUrl } from "../channel/discord.js";
 import {
   describeTelegramUser,
   nextTelegramOffset,
@@ -11,33 +20,59 @@ import {
 
 const TELEGRAM_POLL_TIMEOUT_SECONDS = 30;
 
-export async function initCommand(): Promise<void> {
+export async function initCommand(args: string[] = []): Promise<void> {
   const rl = createInterface({ input, output });
 
   try {
-    await runInit(rl);
+    await runInit(rl, parseInitArgs(args));
   } finally {
     rl.close();
   }
 }
 
-async function runInit(rl: Interface): Promise<void> {
+export function parseInitArgs(args: string[]): ChannelType | undefined {
+  if (args.length === 0) {
+    return undefined;
+  }
+
+  if (args.length === 1 && isChannelType(args[0] as string)) {
+    return args[0] as ChannelType;
+  }
+
+  throw new Error("Usage: afk init [telegram|discord]");
+}
+
+async function runInit(rl: Interface, requestedChannel: ChannelType | undefined): Promise<void> {
   const configPath = getConfigPath();
 
   console.log("Welcome to AFK.\n");
 
+  const channel = requestedChannel ?? (await chooseChannel(rl));
   const existingConfigPath = await findExistingConfigPath();
-  if (existingConfigPath !== null) {
-    console.log(`Existing pairing found at ${existingConfigPath}.`);
-    const overwrite = await askYesNo(rl, "Overwrite it? [y/n]: ");
-    if (!overwrite) {
-      console.log("Leaving existing config unchanged.");
-      return;
-    }
-    console.log("");
+  const existingConfig =
+    existingConfigPath === null ? null : await loadConfig(existingConfigPath);
+
+  if (channel === "discord") {
+    await runDiscordInit(rl, existingConfig, existingConfigPath, configPath);
+    return;
   }
 
-  await chooseTelegram(rl);
+  await runTelegramInit(rl, existingConfig, existingConfigPath, configPath);
+}
+
+async function runTelegramInit(
+  rl: Interface,
+  existingConfig: AppConfig | null,
+  existingConfigPath: string | null,
+  configPath: string
+): Promise<void> {
+  if (
+    existingConfigPath !== null &&
+    existingConfig?.channels.telegram !== undefined &&
+    !(await confirmOverwrite(rl, "Telegram", existingConfigPath))
+  ) {
+    return;
+  }
 
   console.log("\nTelegram setup:");
   console.log("  1. Open Telegram and search @BotFather");
@@ -64,16 +99,10 @@ async function runInit(rl: Interface): Promise<void> {
   }
 
   await saveConfig(
-    {
-      channel: {
-        type: "telegram",
-        bot_token: botToken,
-        chat_id: pairedUpdate.chatId,
-      },
-      agent: {
-        type: "codex",
-      },
-    },
+    withTelegramConfig(existingConfig, {
+      bot_token: botToken,
+      chat_id: pairedUpdate.chatId,
+    }),
     configPath
   );
 
@@ -87,22 +116,132 @@ async function runInit(rl: Interface): Promise<void> {
   console.log("\nYou're ready. Try `afk` in a repo.");
 }
 
-async function chooseTelegram(rl: Interface): Promise<void> {
+async function runDiscordInit(
+  rl: Interface,
+  existingConfig: AppConfig | null,
+  existingConfigPath: string | null,
+  configPath: string
+): Promise<void> {
+  if (
+    existingConfigPath !== null &&
+    existingConfig?.channels.discord !== undefined &&
+    !(await confirmOverwrite(rl, "Discord", existingConfigPath))
+  ) {
+    return;
+  }
+
+  console.log("\nDiscord setup:");
+  console.log("  1. Open https://discord.com/developers/applications");
+  console.log("  2. Create an application, then open Bot > Reset Token");
+  console.log("  3. Copy the bot token here\n");
+
+  const botToken = await askRequired(rl, "Bot token: ");
+  const discord = new DiscordChannel({ botToken });
+
+  try {
+    await discord.start();
+    const bot = discord.getBotUser();
+    console.log(`Token accepted for ${bot.tag}.`);
+    console.log("\nInstall this bot into a private Discord server you control:");
+    console.log(discordBotInviteUrl(bot.id));
+    console.log("\nThen open a direct message with the bot and send any message.");
+    console.log("Waiting for Discord DM...");
+
+    const pairedMessage = await discord.waitForPairingMessage();
+    console.log(
+      `\nDetected DM from ${pairedMessage.tag} (user_id ${pairedMessage.userId}).`
+    );
+
+    const pair = await askYesNo(rl, "Pair this Discord account with afk? [y/n]: ");
+    if (!pair) {
+      console.log("Pairing cancelled. No config was written.");
+      return;
+    }
+
+    await saveConfig(
+      withDiscordConfig(existingConfig, {
+        bot_token: botToken,
+        user_id: pairedMessage.userId,
+        channel_id: pairedMessage.channelId,
+      }),
+      configPath
+    );
+
+    await discord.sendToChannel(
+      pairedMessage.channelId,
+      { text: "Paired successfully. Run `afk discord` in a repo to begin." }
+    );
+
+    console.log("\nPaired successfully.");
+    console.log(`Config saved to ${configPath}`);
+    console.log("\nYou're ready. Try `afk discord` in a repo.");
+  } finally {
+    await discord.stop();
+  }
+}
+
+function withTelegramConfig(
+  existingConfig: AppConfig | null,
+  telegram: NonNullable<AppConfig["channels"]["telegram"]>
+): AppConfig {
+  return {
+    default_channel: existingConfig?.default_channel ?? "telegram",
+    channels: {
+      ...(existingConfig?.channels ?? {}),
+      telegram,
+    },
+    agent: {
+      type: "codex",
+    },
+  };
+}
+
+function withDiscordConfig(
+  existingConfig: AppConfig | null,
+  discord: NonNullable<AppConfig["channels"]["discord"]>
+): AppConfig {
+  return {
+    default_channel: existingConfig?.default_channel ?? "discord",
+    channels: {
+      ...(existingConfig?.channels ?? {}),
+      discord,
+    },
+    agent: {
+      type: "codex",
+    },
+  };
+}
+
+async function chooseChannel(rl: Interface): Promise<ChannelType> {
   console.log("Choose your messaging channel:");
   console.log("  1) Telegram");
-  console.log("  2) Discord (coming in v0.5)\n");
+  console.log("  2) Discord\n");
 
   while (true) {
     const choice = (await rl.question("> ")).trim().toLowerCase();
     if (choice === "" || choice === "1" || choice === "telegram") {
-      return;
+      return "telegram";
     }
     if (choice === "2" || choice === "discord") {
-      console.log("Discord pairing is deferred to v0.5. Choose Telegram for v0.");
-      continue;
+      return "discord";
     }
-    console.log("Choose 1 for Telegram.");
+    console.log("Choose 1 for Telegram or 2 for Discord.");
   }
+}
+
+async function confirmOverwrite(
+  rl: Interface,
+  channelName: string,
+  existingConfigPath: string
+): Promise<boolean> {
+  console.log(`Existing ${channelName} pairing found at ${existingConfigPath}.`);
+  const overwrite = await askYesNo(rl, "Overwrite it? [y/n]: ");
+  if (!overwrite) {
+    console.log("Leaving existing config unchanged.");
+    return false;
+  }
+  console.log("");
+  return true;
 }
 
 async function getInitialOffset(telegram: TelegramChannel): Promise<number | undefined> {

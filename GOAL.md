@@ -49,8 +49,8 @@ If a checkpoint would require violating any of these, the checkpoint is wrong. S
 - **Package manager:** pnpm
 - **Build:** tsc → dist/, no bundler for v0
 - **Distribution:** `npm publish` as `codeafk`, binary `afk`
-- **Telegram SDK:** `node-telegram-bot-api` (or `grammy` if it's substantially better — flag the choice)
-- **Discord SDK:** deferred to v0.5 — do not install for v0
+- **Telegram:** raw Bot API calls through `fetch`
+- **Discord SDK:** `discord.js` for Gateway heartbeat/reconnect, DMs, buttons, and attachments
 - **Codex transport:** Node's `child_process.spawn` + line-delimited JSON over stdin/stdout
 - **Config format:** TOML (`@iarna/toml`)
 - **Config location:** `~/.config/afk/config.toml` (use `env-paths` or hand-roll for cross-platform)
@@ -142,26 +142,33 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ---
 
-### Checkpoint 2: `afk init` + Telegram pairing
+### Checkpoint 2: `afk init` + channel pairing
 
-**Demo:** A new user runs `afk init`, follows the prompts to create a Telegram bot via @BotFather, pastes the token, sends a message to their bot from their phone, and the CLI detects the message and pairs the chat_id. Re-running `afk init` warns that pairing exists and asks to overwrite.
+**Demo:** A new user runs `afk init`, chooses Telegram or Discord, follows the channel-specific bot instructions, pastes the token, sends a message to the bot from their phone, and the CLI detects the message and pairs the authenticated chat/user. Re-running setup for an already-paired channel warns that pairing exists and asks to overwrite.
 
 **Scope:**
 - `src/commands/init.ts`
 - `src/config.ts` with read/save, ensures 0600 permissions on POSIX
 - `src/channel/telegram.ts` — minimal: just enough to do `getUpdates` long-poll during pairing
+- `src/channel/discord.ts` — DM-first Discord pairing and channel adapter
 - Config schema:
   ```toml
-  [channel]
-  type = "telegram"
+  default_channel = "telegram"
+
+  [channels.telegram]
   bot_token = "..."
   chat_id = 12345678
+
+  [channels.discord]
+  bot_token = "..."
+  user_id = "12345678"
+  channel_id = "23456789"
 
   [agent]
   type = "codex"
   ```
 
-**Out of scope:** Discord, anything beyond pairing flow.
+**Out of scope:** Guild-channel Discord mode and slash-command UX.
 
 **Notes:**
 - Use Telegram's `getUpdates` with `timeout=30` for long polling during the "send me a message" wait
