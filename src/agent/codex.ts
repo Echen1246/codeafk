@@ -433,8 +433,10 @@ export class CodexAdapter implements AgentAdapter {
     approvalId: string,
     decision: ApprovalDecision
   ): Promise<void> {
-    if (decision !== "accept" && decision !== "decline") {
-      throw new Error("Only accept and decline approval decisions are implemented in checkpoint 4");
+    if (decision !== "accept" && decision !== "decline" && decision !== "acceptForSession") {
+      throw new Error(
+        "Only accept, acceptForSession, and decline approval decisions are implemented"
+      );
     }
 
     const pending = this.pendingApprovals.get(approvalId);
@@ -666,6 +668,10 @@ export class CodexAdapter implements AgentAdapter {
       return this.handleCommandApproval(params, requestId);
     }
 
+    if (method === "item/fileChange/requestApproval" && isFileChangeApprovalRequest(params)) {
+      return this.handleFileChangeApproval(params, requestId);
+    }
+
     return Promise.reject(
       new JsonRpcResponseError(-32601, `Server request ${method} is not implemented`)
     );
@@ -689,13 +695,47 @@ export class CodexAdapter implements AgentAdapter {
       kind: "shell",
       title: "Codex needs to run:",
       summary,
-      availableDecisions: ["accept", "decline"],
+      availableDecisions: ["accept", "acceptForSession", "decline"],
     });
 
+    return this.waitForApproval(params.threadId, params.turnId, approvalId);
+  }
+
+  private handleFileChangeApproval(
+    params: FileChangeApprovalRequest,
+    requestId: JsonRpcId
+  ): Promise<unknown> {
+    const approvalId = params.itemId;
+    const reason = params.reason ?? "Codex wants to modify files.";
+    const summary =
+      params.grantRoot === undefined || params.grantRoot === null
+        ? reason
+        : `${reason}\n\nroot: ${params.grantRoot}`;
+
+    this.requestApprovals.set(String(requestId), approvalId);
+    this.events.push({
+      type: "approval_required",
+      sessionId: params.threadId,
+      turnId: params.turnId,
+      approvalId,
+      kind: "file_change",
+      title: "Codex needs to edit files:",
+      summary,
+      availableDecisions: ["accept", "acceptForSession", "decline"],
+    });
+
+    return this.waitForApproval(params.threadId, params.turnId, approvalId);
+  }
+
+  private waitForApproval(
+    sessionId: string,
+    turnId: string,
+    approvalId: string
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       this.pendingApprovals.set(approvalId, {
-        sessionId: params.threadId,
-        turnId: params.turnId,
+        sessionId,
+        turnId,
         resolve,
         reject,
       });
@@ -778,7 +818,7 @@ function defaultCodexPath(): string {
 export function buildCodexAppServerArgs(options: { acceptAgentConfig?: boolean } = {}): string[] {
   const args = ["app-server"];
   if (options.acceptAgentConfig !== true) {
-    args.push("-c", 'approval_policy="on-request"');
+    args.push("-c", 'approval_policy="untrusted"');
   }
   args.push("--listen", "stdio://");
   return args;
@@ -1100,6 +1140,27 @@ function isCommandApprovalRequest(value: unknown): value is CommandApprovalReque
       value.approvalId === null ||
       typeof value.approvalId === "string") &&
     (value.command === undefined || value.command === null || typeof value.command === "string")
+  );
+}
+
+type FileChangeApprovalRequest = {
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  reason?: string | null;
+  grantRoot?: string | null;
+};
+
+function isFileChangeApprovalRequest(value: unknown): value is FileChangeApprovalRequest {
+  return (
+    isRecord(value) &&
+    typeof value.threadId === "string" &&
+    typeof value.turnId === "string" &&
+    typeof value.itemId === "string" &&
+    (value.reason === undefined || value.reason === null || typeof value.reason === "string") &&
+    (value.grantRoot === undefined ||
+      value.grantRoot === null ||
+      typeof value.grantRoot === "string")
   );
 }
 

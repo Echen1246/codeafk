@@ -138,7 +138,7 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       `Approval:   ${
         acceptAgentConfig
           ? "Codex config (--accept-agent-config)"
-          : "on-request (AFK remote default)"
+          : "untrusted (AFK remote default)"
       }`
     );
     writeLine(stdout, `Sleep:      ${formatSleepPreventionStatus(sleepStatus)}`);

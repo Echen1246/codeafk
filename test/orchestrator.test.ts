@@ -138,7 +138,7 @@ describe("runOrchestrator", () => {
         kind: "shell",
         title: "Codex needs to run:",
         summary: "npm test",
-        availableDecisions: ["accept", "decline"],
+        availableDecisions: ["accept", "acceptForSession", "decline"],
       },
     ]);
 
@@ -148,11 +148,38 @@ describe("runOrchestrator", () => {
     expect(channel.sentButtons).toEqual([
       [
         { label: "Approve", callbackId: "afk:1" },
-        { label: "Deny", callbackId: "afk:2" },
+        { label: "Approve & Trust", callbackId: "afk:2" },
+        { label: "Deny", callbackId: "afk:3" },
       ],
     ]);
     expect(agent.approvals).toEqual([
       { sessionId: "thr_123", approvalId: "approval_1", decision: "accept" },
+    ]);
+  });
+
+  it("forwards approve-and-trust decisions to Codex", async () => {
+    const channel = new FakeChannel([{ type: "button_press", callbackId: "afk:2", fromUserId: "u1" }]);
+    const agent = new FakeAgent([
+      {
+        type: "approval_required",
+        sessionId: "thr_123",
+        turnId: "turn_1",
+        approvalId: "approval_1",
+        kind: "shell",
+        title: "Codex needs to run:",
+        summary: "npm test",
+        availableDecisions: ["accept", "acceptForSession", "decline"],
+      },
+    ]);
+
+    await runOrchestrator({ agent, channel, session });
+
+    expect(channel.sentMessages).toEqual([
+      "Codex needs to run:\nnpm test",
+      "Trusted shell commands for this session. Codex won't ask again until you restart AFK.",
+    ]);
+    expect(agent.approvals).toEqual([
+      { sessionId: "thr_123", approvalId: "approval_1", decision: "acceptForSession" },
     ]);
   });
 

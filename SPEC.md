@@ -118,7 +118,7 @@ These are architectural rules, not deployment notes. They must hold in all build
 
 6. **No code or repo contents leave the laptop except through the channel.** Diffs are sent as file attachments to Telegram/Discord; the user trusts these services with their messages. The daemon does not upload code to any other endpoint.
 
-7. **Remote sessions force approval ask-mode by default.** AFK starts Codex app-server with `approval_policy="on-request"` unless the user explicitly passes `--accept-agent-config`. This prevents phone control from silently inheriting a local Codex config that never asks before commands.
+7. **Remote sessions force untrusted approval mode by default.** AFK starts Codex app-server with `approval_policy="untrusted"` unless the user explicitly passes `--accept-agent-config`. This prevents phone control from silently inheriting a local Codex config that never asks before commands.
 
 ---
 
@@ -263,10 +263,10 @@ For v0, only these are implemented:
 - `turn_complete`
 - `error`
 - `message_delta` buffering → `message_complete`
-- `approval_required` (shell only)
+- `approval_required` (shell and file_change)
 - `diff_updated` snapshotting
 
-`file_change` approvals and richer event surfaces come in v0.5 and v1.
+Richer file-change summaries and event surfaces come in v0.5 and v1.
 
 ---
 
@@ -350,7 +350,7 @@ A minute later:
 Codex needs to run:
   npm test -- auth.test.ts
 
-[ Approve ]  [ Deny ]
+[ Approve ]  [ Approve & Trust ]  [ Deny ]
 ```
 
 User taps Approve. Codex runs, fails, retries with a fix, and finishes:

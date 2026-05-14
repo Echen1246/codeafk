@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
-import type { AgentAdapter, AgentEvent, AgentSession, AgentTranscriptMessage } from "./agent/types.js";
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentSession,
+  AgentTranscriptMessage,
+  ApprovalDecision,
+} from "./agent/types.js";
 import { ApprovalRegistry } from "./approval.js";
 import type { ChannelEvent, ChannelMessage, MessageChannel } from "./channel/types.js";
 import { renderDiffHtml } from "./diff-format.js";
@@ -175,7 +181,7 @@ async function handleButtonPress(
     resolved.decision
   );
   await options.channel.send({
-    text: resolved.decision === "accept" ? "Approved." : "Denied.",
+    text: formatApprovalDecisionConfirmation(resolved.decision, resolved.approval.kind),
   });
 }
 
@@ -261,6 +267,39 @@ async function handleAgentEvent(
 
 function formatApproval(event: Extract<AgentEvent, { type: "approval_required" }>): string {
   return `${event.title}\n${event.summary}`;
+}
+
+function formatApprovalDecisionConfirmation(
+  decision: ApprovalDecision,
+  kind: Extract<AgentEvent, { type: "approval_required" }>["kind"]
+): string {
+  if (decision === "accept") {
+    return "Approved.";
+  }
+
+  if (decision === "acceptForSession") {
+    return `Trusted ${formatApprovalKind(kind)} for this session. Codex won't ask again until you restart AFK.`;
+  }
+
+  return "Denied.";
+}
+
+function formatApprovalKind(
+  kind: Extract<AgentEvent, { type: "approval_required" }>["kind"]
+): string {
+  if (kind === "shell") {
+    return "shell commands";
+  }
+
+  if (kind === "file_change") {
+    return "file changes";
+  }
+
+  if (kind === "network") {
+    return "network requests";
+  }
+
+  return "this request type";
 }
 
 export async function sendSessionCatchUp(

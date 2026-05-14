@@ -73,7 +73,7 @@ afk
 
 Keep that terminal open. It is the AFK process.
 
-For remote sessions, AFK starts Codex with `approval_policy="on-request"` by default. This is intentional: phone control should not silently inherit a local Codex config that runs commands without asking. If you want AFK to use your existing Codex approval settings, start it explicitly:
+For remote sessions, AFK starts Codex with `approval_policy="untrusted"` by default. This is intentional: phone control should not silently inherit a local Codex config that runs commands without asking. Trusted read-only commands may run immediately, but commands outside Codex's trusted set should produce approval buttons in Telegram. If you want AFK to use your existing Codex approval settings, start it explicitly:
 
 ```bash
 afk --accept-agent-config
@@ -127,8 +127,10 @@ AFK:
 Codex needs to run:
 pnpm test
 
-[Approve] [Deny]
+[Approve] [Approve & Trust] [Deny]
 ```
+
+`Approve & Trust` accepts that request and tells Codex to stop asking for that approval category for the rest of the AFK session.
 
 When Codex finishes, AFK sends a short summary and two diff attachments:
 

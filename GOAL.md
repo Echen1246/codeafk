@@ -35,7 +35,7 @@ These rules hold across all checkpoints. Violating them is never acceptable, eve
 
 7. **One writer per Codex thread at a time.** The daemon owns the thread while Away Mode is ON. `afk resume` releases the lock and ends Away Mode.
 
-8. **Remote sessions force approval ask-mode by default.** Spawn Codex app-server with `approval_policy="on-request"` unless the user explicitly passes `--accept-agent-config`.
+8. **Remote sessions force untrusted approval mode by default.** Spawn Codex app-server with `approval_policy="untrusted"` unless the user explicitly passes `--accept-agent-config`.
 
 9. **Diffs come through events, not on-demand calls.** Snapshot diffs when `turn/diff/updated` arrives. Do not implement a `getDiff()` method.
 
@@ -195,7 +195,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 
 ### Checkpoint 4: Shell command approval
 
-**Demo:** the maintainer sends "run the tests" from their phone. Codex requests approval to execute `npm test`. The daemon sends a Telegram message with the command text and inline buttons "Approve" and "Deny". The maintainer taps Approve. Codex runs the command. The output is summarized and sent back when the turn completes. Tapping Deny does the opposite path and Codex acknowledges the denial.
+**Demo:** the maintainer sends "run the tests" from their phone. Codex requests approval to execute `npm test`. The daemon sends a Telegram message with the command text and inline buttons "Approve", "Approve & Trust", and "Deny". The maintainer taps Approve. Codex runs the command. The output is summarized and sent back when the turn completes. Tapping Deny does the opposite path and Codex acknowledges the denial. Tapping Approve & Trust sends `acceptForSession` so Codex can stop prompting for that approval category for the rest of the AFK session.
 
 **Scope:**
 - Extend `CodexAdapter` to handle `item/commandExecution/requestApproval` → `approval_required` AgentEvent
@@ -203,8 +203,9 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 - `src/approval.ts` — registry mapping `approvalId` → pending state, plus mapping channel `callbackId` → `approvalId`
 - Telegram inline keyboard rendering
 - Orchestrator handles `button_press` ChannelEvents → adapter `answerApproval`
+- `acceptForSession` support for session-scoped trust from an approval card
 
-**Out of scope:** File-change approvals. Network approvals. `acceptForSession` decision (just `accept` / `decline` for v0).
+**Out of scope:** Network approvals.
 
 **Notes:**
 - Inline button `callback_data` is limited to 64 bytes. Don't put the full approval ID in it — use a short hash or a counter, and map it in `approval.ts`.
@@ -222,7 +223,7 @@ Each checkpoint is an end-to-end demoable state. Do not move on until the previo
 - On `turn_complete`, send the most recent `diffRef` as a Telegram file attachment
 - Include changed files and stats in the completion message
 
-**Out of scope:** Syntax highlighting. File-change approval gating (Codex makes changes freely in workspace-write mode; we just report them).
+**Out of scope:** Syntax highlighting. Rich file-change approval previews beyond Codex's approval reason/root.
 
 **Notes:**
 - For v0, send both the raw `.diff` and a lightweight locally generated HTML view. v0.5 can add richer syntax highlighting.

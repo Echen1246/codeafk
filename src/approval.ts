@@ -1,12 +1,6 @@
-import type { ApprovalDecision } from "./agent/types.js";
+import type { AgentEvent, ApprovalDecision } from "./agent/types.js";
 
-type PendingApproval = {
-  sessionId: string;
-  turnId: string;
-  approvalId: string;
-  title: string;
-  summary: string;
-};
+type PendingApproval = Extract<AgentEvent, { type: "approval_required" }>;
 
 type ResolvedApproval = {
   approval: PendingApproval;
@@ -22,10 +16,17 @@ export class ApprovalRegistry {
     this.clearApproval(approval.approvalId);
     this.approvals.set(approval.approvalId, approval);
 
-    return [
-      this.registerCallback(approval.approvalId, "Approve", "accept"),
-      this.registerCallback(approval.approvalId, "Deny", "decline"),
+    const buttons: Array<{ label: string; decision: ApprovalDecision }> = [
+      { label: "Approve", decision: "accept" },
+      { label: "Approve & Trust", decision: "acceptForSession" },
+      { label: "Deny", decision: "decline" },
     ];
+
+    return buttons
+      .filter((button) => approval.availableDecisions.includes(button.decision))
+      .map((button) =>
+        this.registerCallback(approval.approvalId, button.label, button.decision)
+      );
   }
 
   resolveCallback(callbackId: string): ResolvedApproval | null {

@@ -57,11 +57,11 @@ describe("Codex CLI version parsing", () => {
 });
 
 describe("Codex app-server args", () => {
-  it("forces remote sessions into approval ask-mode by default", () => {
+  it("forces remote sessions into untrusted approval mode by default", () => {
     expect(buildCodexAppServerArgs()).toEqual([
       "app-server",
       "-c",
-      'approval_policy="on-request"',
+      'approval_policy="untrusted"',
       "--listen",
       "stdio://",
     ]);
