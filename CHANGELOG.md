@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 - 2026-05-13
+
+### Changed
+
+- AFK now starts Codex app-server with `approval_policy="on-request"` by default for remote sessions, even if the user's Codex config is less restrictive.
+- Added `--accept-agent-config` for users who explicitly want AFK to inherit their Codex approval settings.
+
 ## 0.1.0 - 2026-05-13
 
 Initial v0 release.

@@ -1,6 +1,6 @@
 {
   "name": "codeafk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Go AFK while Codex keeps working through Telegram.",
   "type": "module",
   "bin": {

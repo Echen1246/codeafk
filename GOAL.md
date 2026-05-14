@@ -35,7 +35,9 @@ These rules hold across all checkpoints. Violating them is never acceptable, eve
 
 7. **One writer per Codex thread at a time.** The daemon owns the thread while Away Mode is ON. `afk resume` releases the lock and ends Away Mode.
 
-8. **Diffs come through events, not on-demand calls.** Snapshot diffs when `turn/diff/updated` arrives. Do not implement a `getDiff()` method.
+8. **Remote sessions force approval ask-mode by default.** Spawn Codex app-server with `approval_policy="on-request"` unless the user explicitly passes `--accept-agent-config`.
+
+9. **Diffs come through events, not on-demand calls.** Snapshot diffs when `turn/diff/updated` arrives. Do not implement a `getDiff()` method.
 
 If a checkpoint would require violating any of these, the checkpoint is wrong. Stop and flag it.
 

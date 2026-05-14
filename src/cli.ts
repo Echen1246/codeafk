@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { initCommand } from "./commands/init.js";
 import { resumeCommand } from "./commands/resume.js";
-import { startCommand } from "./commands/start.js";
+import { parseStartArgs, startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
 import { stopCommand } from "./commands/stop.js";
 
@@ -10,7 +10,7 @@ type CommandName = "init" | "start" | "stop" | "resume" | "status";
 type Command = {
   name: CommandName;
   description: string;
-  run: () => Promise<void> | void;
+  run: (args: string[]) => Promise<void> | void;
 };
 
 let fatalHandlersInstalled = false;
@@ -24,7 +24,7 @@ const commands: Command[] = [
   {
     name: "start",
     description: "Start Away Mode in the current workspace",
-    run: startCommand,
+    run: (args) => startCommand(parseStartArgs(args)),
   },
   {
     name: "stop",
@@ -48,24 +48,33 @@ function printHelp(): void {
 
 Usage:
   afk              Start Away Mode in the current workspace
+  afk --accept-agent-config
   afk <command>
   afk --help
 
 Commands:
 ${commands.map((command) => `  ${command.name.padEnd(8)} ${command.description}`).join("\n")}
+
+Options:
+  --accept-agent-config  Use Codex approval settings from ~/.codex/config.toml instead of AFK's remote-safe approval default
 `);
 }
 
 async function main(args: string[]): Promise<void> {
-  const [commandName] = args;
+  const [commandName, ...commandArgs] = args;
 
   if (commandName === undefined) {
-    await startCommand();
+    await startCommand(parseStartArgs([]));
     return;
   }
 
   if (commandName === "--help" || commandName === "-h") {
     printHelp();
+    return;
+  }
+
+  if (commandName.startsWith("-")) {
+    await startCommand(parseStartArgs(args));
     return;
   }
 
@@ -78,7 +87,7 @@ async function main(args: string[]): Promise<void> {
     return;
   }
 
-  await command.run();
+  await command.run(commandArgs);
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {

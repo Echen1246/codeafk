@@ -328,6 +328,7 @@ type CodexAdapterOptions = {
   diffDirectory?: string;
   env?: NodeJS.ProcessEnv;
   onWarning?: (message: string) => void;
+  acceptAgentConfig?: boolean;
 };
 
 export class CodexAdapter implements AgentAdapter {
@@ -335,6 +336,7 @@ export class CodexAdapter implements AgentAdapter {
   private readonly diffDirectory: string;
   private readonly env: NodeJS.ProcessEnv;
   private readonly onWarning: (message: string) => void;
+  private readonly acceptAgentConfig: boolean;
   private readonly events = new AsyncEventQueue<AgentEvent>();
   private readonly messageBuffers = new Map<string, string>();
   private readonly latestDiffs = new Map<string, StoredDiff>();
@@ -352,6 +354,7 @@ export class CodexAdapter implements AgentAdapter {
     this.env = options.env ?? process.env;
     this.diffDirectory = options.diffDirectory ?? getDiffDirectory(this.env);
     this.onWarning = options.onWarning ?? ((message) => console.warn(message));
+    this.acceptAgentConfig = options.acceptAgentConfig ?? false;
   }
 
   async startSession(options: StartSessionOptions): Promise<AgentSession> {
@@ -498,11 +501,15 @@ export class CodexAdapter implements AgentAdapter {
       return;
     }
 
-    this.process = spawn(this.codexPath, ["app-server", "--listen", "stdio://"], {
-      cwd,
-      env: this.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    this.process = spawn(
+      this.codexPath,
+      buildCodexAppServerArgs({ acceptAgentConfig: this.acceptAgentConfig }),
+      {
+        cwd,
+        env: this.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      }
+    );
     this.connection = new JsonRpcConnection(
       this.process.stdin,
       this.process.stdout,
@@ -766,6 +773,15 @@ function defaultCodexPath(): string {
   }
 
   return "codex";
+}
+
+export function buildCodexAppServerArgs(options: { acceptAgentConfig?: boolean } = {}): string[] {
+  const args = ["app-server"];
+  if (options.acceptAgentConfig !== true) {
+    args.push("-c", 'approval_policy="on-request"');
+  }
+  args.push("--listen", "stdio://");
+  return args;
 }
 
 export function getDiffDirectory(env: NodeJS.ProcessEnv = process.env): string {

@@ -73,6 +73,12 @@ afk
 
 Keep that terminal open. It is the AFK process.
 
+For remote sessions, AFK starts Codex with `approval_policy="on-request"` by default. This is intentional: phone control should not silently inherit a local Codex config that runs commands without asking. If you want AFK to use your existing Codex approval settings, start it explicitly:
+
+```bash
+afk --accept-agent-config
+```
+
 In Telegram:
 
 ```text
@@ -167,6 +173,12 @@ afk start    Same as afk
 afk stop     Stop Away Mode from another terminal
 afk resume   Stop Away Mode and print the Codex resume command
 afk status   Show current AFK status
+```
+
+Start option:
+
+```text
+--accept-agent-config  Use your Codex approval settings instead of AFK's remote-safe default
 ```
 
 ## What AFK Stores

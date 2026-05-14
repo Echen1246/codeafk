@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildCodexAppServerArgs,
   encodeJsonRpcMessage,
   getDiffDirectory,
   JsonRpcLineParser,
@@ -52,6 +53,26 @@ describe("Codex CLI version parsing", () => {
     ].join("\n");
 
     expect(parseCodexCliVersion(output)).toBe("0.130.0-alpha.5");
+  });
+});
+
+describe("Codex app-server args", () => {
+  it("forces remote sessions into approval ask-mode by default", () => {
+    expect(buildCodexAppServerArgs()).toEqual([
+      "app-server",
+      "-c",
+      'approval_policy="on-request"',
+      "--listen",
+      "stdio://",
+    ]);
+  });
+
+  it("can explicitly inherit the user's Codex approval config", () => {
+    expect(buildCodexAppServerArgs({ acceptAgentConfig: true })).toEqual([
+      "app-server",
+      "--listen",
+      "stdio://",
+    ]);
   });
 });
 

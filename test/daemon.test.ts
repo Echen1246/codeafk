@@ -161,6 +161,7 @@ describe("daemon state", () => {
     });
 
     expect(channel.sentMessages).toContain("Resumed thr_other. What would you like to do?");
+    expect(stdout.text).toContain("Approval:   on-request (AFK remote default)");
     expect(stdout.text).toContain("Keep this terminal open while Away Mode runs.");
     expect(stdout.text).toContain("codex resume thr_other");
     await expect(readLastThreadState(statePath)).resolves.toMatchObject({

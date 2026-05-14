@@ -53,6 +53,7 @@ export type DaemonOptions = {
   statePath?: string;
   sleepPreventer?: SleepPreventer;
   stdout?: OutputWriter;
+  acceptAgentConfig?: boolean;
 };
 
 export function getStatePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -93,7 +94,8 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
       console.error(`Failed to update channel status: ${asError(patchError).message}`);
     });
   };
-  const agent = options.agent ?? new CodexAdapter();
+  const acceptAgentConfig = options.acceptAgentConfig ?? false;
+  const agent = options.agent ?? new CodexAdapter({ acceptAgentConfig });
   const channel =
     options.channel ??
     new TelegramChannel({
@@ -131,6 +133,14 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
     writeLine(stdout, "Agent:      Codex");
     writeLine(stdout, "Thread:     choosing");
     writeLine(stdout, "Channel:    Telegram");
+    writeLine(
+      stdout,
+      `Approval:   ${
+        acceptAgentConfig
+          ? "Codex config (--accept-agent-config)"
+          : "on-request (AFK remote default)"
+      }`
+    );
     writeLine(stdout, `Sleep:      ${formatSleepPreventionStatus(sleepStatus)}`);
     writeLine(stdout, "\nAway Mode is ON.");
     writeLine(stdout, "Text your bot /sessions to choose a project and Codex session.");
