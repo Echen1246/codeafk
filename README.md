@@ -1,261 +1,132 @@
 <img width="600" height="150" alt="afkcodedesk-ezgif com-resize" src="https://github.com/user-attachments/assets/f8e50fbf-1dc4-4e5e-9d94-3cb7f641ee3e" />
 
+## CodeAFK lets Codex keep working while you are away from your keyboard.
 
-## CodeAFK lets you code while you're away from keyboard (afk).
+Start `afk` on your laptop, leave the terminal open, and talk to Codex from your phone through Telegram or Discord. You can send prompts, approve commands, trust approvals for the session, and come back to the same Codex thread later.
 
-Download with `npm install codeafk`. From your CLI, enter `afk`, leave your laptop running or activate `caffeinate` while it's in your backpack, and send prompts/manage your IDE of choice from Telegram or Discord while you are away. AFK forwards your messages to Codex, sends replies back to your phone, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
+CodeAFK is intentionally small: your laptop, Codex, and a chat app. There is no hosted relay, web dashboard, account system, analytics, or cloud sync.
 
-It is small on purpose: Codex, your messaging app, and your laptop. No hosted relay, dashboard, accounts, analytics, or cloud sync.
+## Supported
 
-AFK is experimental. It depends on Codex app-server behavior, which may change.
+Communicate through:
 
-## When To Use It
+- Telegram
+- Discord
 
-- You are leaving your desk but want Codex to keep working.
-- You want to answer Codex questions from your phone.
-- You want to approve or deny shell commands while away.
-- You want a quick phone-readable diff before you get back.
-- You want to resume the same Codex thread on your laptop later.
+Currently supports:
 
+- Codex
 
-## Requirements
+## Why Use CodeAFK?
 
-- Node.js 20 or newer
-- Codex installed with `codex app-server` support
-- A Telegram account and bot token, or a Discord account and bot token
+Use CodeAFK when Codex is already working and you need to leave your desk.
 
-macOS is the best-supported platform in v0 because AFK runs `caffeinate -dimsu` while Away Mode is active. Other desktop platforms can run the CLI, but v0 does not keep them awake automatically.
+- Keep steering a task from your phone.
+- Approve or deny shell commands remotely.
+- Use `Approve & Trust` to reduce repeated prompts for the current session.
+- Read summaries and phone-friendly diffs when Codex finishes a turn.
+- Resume the same Codex thread when you get back.
+
+This is not a mobile IDE. It is a remote control for the Codex session on your own laptop.
 
 ## Install
 
-From npm:
+For normal use, install CodeAFK globally:
 
 ```bash
-npm install codeafk
-afk 
+npm install -g codeafk
 ```
 
-From a local checkout:
-
-```bash
-pnpm install
-pnpm build
-npm link
-afk --help
-```
-
-## First-Time Setup
-
-Telegram is the fastest setup:
-
-1. Open Telegram and message [@BotFather](https://t.me/BotFather).
-2. Create a bot with `/newbot`.
-3. Copy the bot token.
-4. Run:
-
-   ```bash
-   afk init
-   ```
-
-5. Paste the bot token.
-6. Send any Telegram message to your new bot.
-7. Confirm the pairing in your terminal.
-
-Discord setup uses a DM-first bot flow:
-
-1. Open <https://discord.com/developers/applications>.
-2. Create an application, then open **Bot** and copy/reset the token.
-3. Run:
-
-   ```bash
-   afk init discord
-   ```
-
-4. Paste the bot token.
-5. Open the install URL AFK prints and add the bot to a private Discord server you control.
-6. Open a direct message with the bot and send any message.
-7. Confirm the pairing in your terminal.
-
-AFK saves tokens on your laptop at `~/.config/afk/config.toml` with owner-only file permissions.
-
-## Daily Workflow
-
-Start AFK from the repo you want Codex to work in:
+That makes `afk` available from any project on your laptop.
 
 ```bash
 cd /path/to/your/project
 afk
 ```
 
-Keep that terminal open. It is the AFK process.
+You can also install it inside one project:
 
-If you have multiple channels configured, choose one explicitly:
+```bash
+npm install codeafk
+npx afk
+```
+
+A local install only gives that one project a copy. In that project, run it with `npx afk`.
+
+## First-Time Setup
+
+Pick the chat app you want to use:
+
+- [Telegram setup](./TELEGRAM.md)
+- [Discord setup](./DISCORD.md)
+
+Codex setup notes are here:
+
+- [Codex setup and known issues](./CODEX.md)
+
+After setup, start AFK from the repo you want Codex to work in:
+
+```bash
+cd /path/to/your/project
+afk
+```
+
+If you configured both Telegram and Discord, choose one:
 
 ```bash
 afk telegram
 afk discord
-afk --channel telegram
 ```
 
-For remote sessions, AFK starts Codex with `approval_policy="untrusted"` by default. This is intentional: phone control should not silently inherit a local Codex config that runs commands without asking. Trusted read-only commands may run immediately, but commands outside Codex's trusted set should produce approval buttons on your phone. If you want AFK to use your existing Codex approval settings, start it explicitly:
+## Daily Flow
+
+1. Run `afk` from your project folder.
+2. On your phone, send `/sessions`.
+3. Pick a project.
+4. Pick an existing Codex session, or reply `new`.
+5. Text the bot like you would text Codex.
+6. Approve, trust, or deny commands when Codex asks.
+7. Press `Ctrl+C` when you are back at your laptop.
+
+AFK prints a `codex resume <thread-id>` command when it stops. Run that to continue the same thread locally.
+
+## Sleep Behavior
+
+On macOS, AFK starts `caffeinate -dimsu` while it is running. That helps keep the laptop awake during Away Mode.
+
+Closed-lid behavior still depends on your Mac, power, network, and sleep settings. Test your own setup before relying on it for a long errand.
+
+## Commands
+
+```text
+afk                  Start Away Mode in the current workspace
+afk telegram         Start Away Mode with Telegram
+afk discord          Start Away Mode with Discord
+afk init             Pair AFK with a channel
+afk init telegram    Pair Telegram
+afk init discord     Pair Discord
+afk stop             Stop Away Mode from another terminal
+afk resume           Stop Away Mode and print the Codex resume command
+afk status           Show current AFK status
+```
+
+## Security
+
+Remote sessions use Codex `approval_policy="untrusted"` by default. AFK shows approval buttons when Codex asks to run something outside its trusted set.
+
+To use your existing Codex approval settings instead:
 
 ```bash
 afk --accept-agent-config
 ```
 
-In Telegram or Discord:
-
-```text
-You:
-/sessions
-
-AFK:
-Recent projects:
-
-[1] myapp - /Users/you/projects/myapp (6 sessions)
-[2] docs-site - /Users/you/projects/docs-site (3 sessions)
-
-Reply with a number.
-```
-
-Choose a project, then choose a recent Codex session or reply `new`.
-
-```text
-AFK:
-Recent sessions in myapp:
-
-[1] today, 14m - "fix the failing auth callback test" (47 msg)
-[2] today, 2h - "add tests for the expired-state case" (23 msg)
-[3] yesterday - "refactor OAuth state validation" (89 msg)
-
-Reply with a number, or "new" for a new session.
-```
-
-Now text the bot like you would text Codex:
-
-```text
-You:
-look at the failing test and propose a fix
-
-AFK:
-Sent to Codex.
-
-Codex:
-I found the failing assertion...
-```
-
-If Codex asks to run a command, AFK shows approval buttons:
-
-```text
-AFK:
-Codex needs to run:
-pnpm test
-
-[Approve] [Approve & Trust] [Deny]
-```
-
-`Approve & Trust` accepts that request and tells Codex to stop asking for that approval category for the rest of the AFK session.
-
-When Codex finishes, AFK sends a short summary and two diff attachments:
-
-```text
-AFK:
-Codex finished.
-Changed: README.md (+1 -0)
-
-Attachments:
-turn_abc123.html
-turn_abc123.diff
-```
-
-The `.html` file is easier to read on a phone. The `.diff` file is the raw unified diff.
-
-## Coming Back To Your Laptop
-
-Press `Ctrl+C` in the terminal running `afk`.
-
-AFK stops and prints:
-
-```bash
-codex resume <thread-id>
-```
-
-Run that command to continue the same Codex thread locally.
-
-If you stopped AFK from another terminal, run this to print the same resume command:
-
-```bash
-afk resume
-```
-
-If an already-open Codex window looks stale, reopen or resume the thread. Codex may not live-refresh updates that happened while AFK was driving the session.
-
-## Commands
-
-```text
-afk          Start Away Mode in the current workspace
-afk telegram Start Away Mode with Telegram
-afk discord  Start Away Mode with Discord once configured
-afk init     Pair AFK with a channel
-afk init telegram
-afk init discord
-afk start    Same as afk
-afk stop     Stop Away Mode from another terminal
-afk resume   Stop Away Mode and print the Codex resume command
-afk status   Show current AFK status
-```
-
-Start option:
-
-```text
---accept-agent-config  Use your Codex approval settings instead of AFK's remote-safe default
---channel <channel>    Use a configured channel: telegram or discord
-```
-
-## What AFK Stores
-
-AFK stores local config and local state only:
-
-- Config: `~/.config/afk/config.toml`
-- Last thread state: `~/.local/state/afk/last-thread.json`
-- Diff snapshots: `~/.local/state/afk/diffs/<turnId>.diff`
-
-Your bot tokens stay on your machine. AFK does not send code, repo contents, diffs, logs, or telemetry anywhere except the chat you paired.
-
-During the rename from `apgr`, AFK also reads old config/state from `~/.config/apgr` and `~/.local/state/apgr` so existing local pairings keep working.
-
-## Troubleshooting
-
-If `afk` cannot find Codex, confirm `codex` works in the same terminal:
-
-```bash
-codex --version
-```
-
-If Telegram or Discord stops responding, check that your laptop is awake, online, and still running `afk`.
-
-If approval buttons do not appear, Codex may already be allowed to run that command by your local Codex settings. AFK only shows buttons when Codex asks for approval.
-
-If the phone session does not appear in an already-open Codex window, run the printed `codex resume <thread-id>` command.
+AFK stores pairing data locally at `~/.config/afk/config.toml`. Bot tokens stay on your machine.
 
 ## Development
 
 ```bash
 pnpm install
-pnpm typecheck
-pnpm test
+pnpm check
 pnpm build
 pnpm pack:dry-run
-```
-
-Local Codex smoke test:
-
-```bash
-pnpm tsx src/dev/local-loop.ts "list files in this directory"
-```
-
-Dead-code check:
-
-```bash
-XDG_CACHE_HOME=/private/tmp/afk-cache pnpm dlx knip
 ```

@@ -1,7 +1,7 @@
 {
   "name": "codeafk",
   "version": "0.1.2",
-  "description": "Go AFK while Codex keeps working through Telegram.",
+  "description": "Use Codex from your phone through Telegram or Discord.",
   "type": "module",
   "bin": {
     "afk": "dist/cli.js"
@@ -29,12 +29,16 @@
     "dist/session-picker.js",
     "dist/sleep.js",
     "README.md",
+    "TELEGRAM.md",
+    "DISCORD.md",
+    "CODEX.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "keywords": [
     "codex",
     "telegram",
+    "discord",
     "cli",
     "agent",
     "afk",
