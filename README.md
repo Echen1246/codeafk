@@ -1,6 +1,7 @@
-# AFK
+<img width="600" height="150" alt="afkcodedesk-ezgif com-resize" src="https://github.com/user-attachments/assets/f8e50fbf-1dc4-4e5e-9d94-3cb7f641ee3e" />
 
-AFK lets you keep working with Codex from your phone.
+
+## AfkCode lets you code while you're away from keyboard (afk).
 
 Start `afk` on your laptop, leave it running, and send prompts from Telegram while you are away. AFK forwards your messages to Codex, sends Codex replies back to Telegram, shows approval buttons when Codex asks to run a command, and gives you a diff when a turn finishes.
 
@@ -16,7 +17,6 @@ AFK is experimental. It depends on Codex app-server behavior, which may change.
 - You want a quick phone-readable diff before you get back.
 - You want to resume the same Codex thread on your laptop later.
 
-AFK does not run Codex on your phone. Codex still runs on your laptop. Telegram is just the remote control.
 
 ## Requirements
 
@@ -32,8 +32,8 @@ macOS is the best-supported platform in v0 because AFK runs `caffeinate -dimsu` 
 From npm:
 
 ```bash
-npm install -g codeafk
-afk --help
+npm install codeafk
+afk 
 ```
 
 From a local checkout:
